@@ -1,0 +1,10 @@
+{
+  "name": "Mapa de Postos",
+  "short_name": "Postos",
+  "description": "App para cadastrar e visualizar preços de postos de combustível.",
+  "start_url": "Front_map.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2b7de9",
+  "icons": []
+}

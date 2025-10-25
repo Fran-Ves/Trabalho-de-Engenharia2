@@ -6,52 +6,77 @@
 
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <!-- Leaflet Routing Machine CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+  <link rel="manifest" href="manifest.json">
 
   <style>
-    html, body {
-      height: 100%;
-      margin: 0;
-      padding: 0;
-    }
-    #app {
-      display: flex;
-      height: 100vh;
-      width: 100%;
-    }
-    #map {
-      flex: 1;
-    }
-    #sidebar {
-      width: 300px;
-      box-sizing: border-box;
-      background: white;
-      padding: 10px;
-      overflow: auto;
-      border-left: 1px solid #e5e5e5;
+    html, body {height: 100%; margin: 0; padding: 0;}
+    #app {display: flex; height: 100vh; width: 100%;}
+    #map {flex: 1;}
+    #sidebar {width: 300px; background: white; padding: 10px; overflow: auto; border-left: 1px solid #ccc;}
+    button {margin-top: 6px; width: 100%; padding: 8px;}
+    @media (max-width: 768px) {
+      #sidebar {width: 100%; height: 40%; position: fixed; bottom: 0; left: 0; border-top: 1px solid #ccc;}
+      #map {height: 60%;}
     }
   </style>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js')
+        .then(() => console.log('Service Worker registrado!'))
+        .catch(err => console.error('Erro SW:', err));
+    }
+  </script>
 </head>
 <body>
   <div id="app">
     <div id="map"></div>
     <div id="sidebar">
-      <h3>Postos ao longo da rota</h3>
-      <button id="routeBtn">Traçar rota</button>
-      <small id="routeHint" style="display:block;margin-top:6px;color:#555;">Clique no botão e depois selecione 2 pontos no mapa.</small>
-      <ul id="list"></ul>
+      <h3>Mapa de Postos</h3>
+    
+      <div id="tabs">
+        <button onclick="showTab('tabRoute')">Rota</button>
+        <button onclick="showTab('tabAdd')">Cadastrar</button>
+        <button onclick="showTab('tabUpdate')">Atualizar</button>
+        <button onclick="showTab('tabView')">Ver preços</button>
+      </div>
+    
+      <div id="tabRoute" class="tab">
+        <h4>Rota</h4>
+        <button id="routeBtn">Traçar rota</button>
+        <small style="display:block;margin-top:6px;color:#555;">Clique no botão e depois selecione 2 pontos no mapa.</small>
+        <ul id="list"></ul>
+      </div>
+    
+      <div id="tabAdd" class="tab">
+        <h4>Cadastrar preço</h4>
+        <button id="selectLocationBtn">Selecionar Localização no Mapa</button>
+        <small id="locationStatus" style="display:block;margin-top:6px;color:#555;">Clique no botão acima e depois no mapa.</small>
+        <input id="stationName" placeholder="Nome do Posto (Opcional)" type="text" style="margin-top: 10px;"><br>
+        <input id="addPrice" placeholder="Preço (R$)" type="number" step="0.01" style="margin-top: 10px;"><br>
+        <button onclick="savePrice()" id="savePriceBtn" disabled>Salvar preço</button>
+      </div>
+    
+      <div id="tabUpdate" class="tab">
+        <h4>Atualizar preço</h4>
+        <select id="updateSelect"></select><br>
+        <input id="updatePrice" placeholder="Novo preço (R$)" type="number" step="0.01"><br>
+        <button onclick="updatePrice()">Atualizar</button>
+      </div>
+    
+      <div id="tabView" class="tab">
+        <h4>Postos com preço cadastrado</h4>
+        <ul id="stationList"></ul>
+      </div>
     </div>
+    
+    
   </div>
 
-  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <!-- Leaflet Routing Machine -->
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
-  <!-- Turf.js para análise espacial -->
   <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
-
-  <!-- Seu script -->
   <script src="Dinamica_map.js"></script>
 </body>
 </html>

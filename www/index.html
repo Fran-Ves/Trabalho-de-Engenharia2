@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Mapa de Postos — App</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+  <!-- Font Awesome (ícones) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+  <!-- Manifest (opcional PWA) -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Barra superior fixa: botão voltar (oculto) | perfil | busca | cadastrar -->
+  <header id="topbar">
+    <!-- botão voltar global que substitui o "+" quando abrir telas fullscreen -->
+    <button id="topbarBackBtn" class="icon-btn hidden" title="Voltar"><i class="fa-solid fa-arrow-left"></i></button>
+
+    <button id="profileBtn" class="icon-btn" title="Perfil"><i class="fa-solid fa-user"></i></button>
+    <div class="search-wrap">
+      <input id="searchInput" type="search" placeholder="Buscar posto por nome..." />
+    </div>
+    <!-- botão + -->
+    <button id="addBtn" class="icon-btn" title="Cadastrar"><i class="fa-solid fa-plus"></i></button>
+  </header>
+
+  <!-- QUICK MENU (canto superior direito) -->
+  <div id="quickMenu" class="quick-menu hidden" aria-hidden="true">
+    <button id="quickCadastrarPosto" class="quick-item"><i class="fa-solid fa-gas-pump"></i> Cadastrar Posto</button>
+    <button id="quickCadastrarUser" class="quick-item"><i class="fa-solid fa-user-plus"></i> Cadastrar-se</button>
+    <button id="quickTraçarRotas" class="quick-item"><i class="fa-solid fa-route"></i> Traçar rotas</button>
+  </div>
+
+  <!-- Main: mapa (tela principal) -->
+  <main id="main">
+    <div id="map" role="application" aria-label="Mapa de postos"></div>
+  </main>
+
+  <!-- TELA: Cadastro Usuário (full screen) -->
+  <section id="screenRegisterUser" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Cadastrar Usuário</h2>
+      <form id="formUserScreen" class="form-screen">
+        <label>Nome</label>
+        <input id="userNameScreen" type="text" placeholder="Seu nome" />
+        <label>E-mail</label>
+        <input id="userEmailScreen" type="email" placeholder="exemplo@dominio.com" />
+        <label>Senha</label>
+        <input id="userPassScreen" type="password" placeholder="senha" />
+        <div class="actions">
+          <button type="button" id="saveUserScreenBtn">Salvar cadastro</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- TELA: Cadastro Posto (full screen) -->
+  <section id="screenRegisterPosto" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Cadastrar Posto</h2>
+      <form id="formPostoScreen" class="form-screen">
+        <label>Nome do Posto</label>
+        <input id="postoNameScreen" type="text" placeholder="Nome do posto" />
+        <label>CNPJ</label>
+        <input id="postoCnpjScreen" type="text" placeholder="00.000.000/0000-00" />
+        <label>Localização</label>
+        <div class="loc-row">
+          <button type="button" id="selectOnMapScreenBtn">Selecionar no mapa</button>
+          <span id="locInfoScreen" class="muted">Nenhum local selecionado</span>
+        </div>
+        <div class="actions">
+          <button type="button" id="savePostoScreenBtn">Salvar cadastro</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- TELA: Perfil (full screen) -->
+  <section id="screenProfile" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Perfil</h2>
+      <div id="profileContentScreen"></div>
+    </div>
+  </section>
+
+  <!-- TELA: Edição de Preços (full screen) -->
+  <section id="screenEditPrices" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Editar preços — <span id="editPostoName"></span></h2>
+      <form id="pricesFormScreen" class="form-screen">
+        <label>Gasolina (R$)</label>
+        <input id="priceGas" type="number" step="0.01" />
+        <label>Etanol (R$)</label>
+        <input id="priceEtanol" type="number" step="0.01" />
+        <label>Diesel (R$)</label>
+        <input id="priceDiesel" type="number" step="0.01" />
+        <div class="actions">
+          <button type="button" id="savePricesBtn">Salvar alterações</button>
+          <button type="button" id="cancelPricesBtn" class="btn-secondary">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Scripts: Leaflet e app -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="script.js"></script>
+
+  <!-- SW -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js').catch(()=>{/* ignore */});
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,154 @@
+/* Estilos mobile-first para o app SPA de mapa de postos */
+
+/* Reset básico */
+* { box-sizing: border-box; }
+html,body,#main,#map { height: 100%; margin: 0; padding: 0; }
+body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial; background:#f4f7fb; color:#071232; }
+
+/* Top bar */
+#topbar {
+  height:56px; background:#1976d2; color:#fff; display:flex; align-items:center; gap:8px;
+  padding: 8px 10px; position:fixed; top:0; left:0; right:0; z-index:1000;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+.icon-btn { background:transparent; border:none; color:white; font-size:20px; padding:8px; border-radius:8px; }
+.icon-btn:active { transform:scale(.98); }
+.search-wrap { flex:1; display:flex; align-items:center; justify-content:center; }
+#searchInput {
+  width:100%; max-width:560px; padding:8px 12px; border-radius:8px; border:none; outline:none;
+  background: rgba(255,255,255,0.15); color:white;
+}
+#searchInput::placeholder { color: rgba(255,255,255,0.8); }
+
+/* Ajuste: topbar back button */
+#topbar { display:flex; align-items:center; gap:8px; }
+#topbarBackBtn { font-size:18px; color:white; background:transparent; border:none; padding:8px; border-radius:8px; }
+#topbarBackBtn.hidden { display:none; }
+
+/* Main map area below topbar */
+#main { padding-top:56px; display:flex; flex-direction:column; height:calc(100vh - 56px); }
+#map {
+  flex:1; margin:12px; border-radius:12px; overflow:hidden; box-shadow: 0 6px 18px rgba(12,24,48,0.10);
+  border:1px solid rgba(17,24,39,0.04);
+}
+
+/* Sheets (bottom modals) */
+.sheet {
+  position: fixed; left: 8px; right: 8px; bottom: 12px; z-index:1200;
+  background: transparent; display:flex; justify-content:center; pointer-events:none;
+}
+.sheet .sheet-inner {
+  width:100%; max-width:720px; background: #fff; border-radius:14px; padding:14px; pointer-events:auto;
+  box-shadow: 0 12px 30px rgba(6,20,40,0.12);
+}
+.sheet.hidden { display:none; }
+
+/* Choices row */
+.choice-row { display:flex; gap:8px; margin:12px 0; }
+.choice { flex:1; padding:10px; border-radius:8px; border:none; background:#f1f5f9; font-weight:600; }
+.choice:active { transform:translateY(1px); }
+
+/* Forms */
+.form label { display:block; margin-top:8px; color:#233244; font-weight:600; font-size:13px; }
+.form input { width:100%; padding:10px; margin-top:6px; border-radius:8px; border:1px solid #e6edf3; }
+.loc-row { display:flex; gap:8px; align-items:center; margin-top:6px; }
+.loc-row .muted { font-size:13px; color:#6b7280; }
+
+/* Buttons */
+.actions { display:flex; gap:8px; margin-top:12px; }
+button { cursor:pointer; }
+button#saveUserBtn, button#savePostoBtn, button#savePricesBtn {
+  flex:1; background:#1976d2; color:white; border:none; padding:10px; border-radius:8px; font-weight:700;
+}
+.btn-secondary { flex:1; background:#eef2f7; border:none; padding:10px; border-radius:8px; }
+
+/* Profile content */
+#profileContent { padding:6px 0; }
+.profile-card { display:flex; gap:12px; align-items:center; }
+.profile-avatar { width:64px; height:64px; border-radius:50%; background:#eef2f7; display:flex; align-items:center; justify-content:center; font-size:28px; color:#1976d2; }
+.profile-info { flex:1; }
+.profile-actions { margin-top:12px; display:flex; gap:8px; }
+
+/* Edit prices */
+#editPricesSheet h2 { margin:0 0 6px 0; }
+
+/* Toast */
+.toast { position:fixed; left:50%; transform:translateX(-50%); bottom:80px; background:#111; color:white; padding:8px 12px; border-radius:8px; z-index:1400; opacity:0.95; }
+
+/* Close button for sheets */
+.close-sheet { float:right; background:transparent; border:none; font-size:20px; }
+
+/* QUICK MENU (pequena janelinha ao lado do +) */
+.quick-menu {
+  position: fixed;
+  top: 60px; /* logo abaixo da barra superior */
+  right: 12px;
+  width: 200px;
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(12,24,48,0.12);
+  z-index: 1300;
+  overflow: hidden;
+  padding: 6px;
+}
+.quick-menu.hidden { display: none; }
+.quick-item {
+  display:flex; align-items:center; gap:8px;
+  width: 100%; text-align:left; padding:10px; border:none; background:transparent;
+  font-weight:600; color:#0b2540; border-radius:8px;
+}
+.quick-item:hover { background: #f1f5f9; cursor:pointer; }
+
+/* Full-screen screens (SPA) */
+.screen {
+  position: fixed;
+  top: 56px;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #fff;
+  z-index: 1400;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  transition: transform .25s ease, opacity .25s ease;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 18px;
+}
+.screen.hidden { display: none; }
+
+/* Inner box to contain form content */
+.screen-inner {
+  width: 100%;
+  max-width: 760px;
+  background: transparent;
+  padding-bottom: 40px;
+}
+
+/* Back button */
+.back-btn {
+  background: transparent;
+  border: none;
+  color: #1976d2;
+  font-weight: 700;
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+
+/* Form inside screen */
+.form-screen { margin-top: 6px; background: #fff; padding-bottom: 20px; }
+.form-screen label { display:block; margin-top:10px; font-weight:700; color:#233244; }
+.form-screen input { width:100%; padding:10px; margin-top:6px; border-radius:8px; border:1px solid #e6edf3; }
+
+/* Select on map button and loc info */
+.loc-row { display:flex; gap:8px; align-items:center; margin-top:6px; }
+#selectOnMapScreenBtn { padding:8px 10px; border-radius:8px; border:none; background:#1976d2; color:white; }
+#locInfoScreen { color:#6b7280; font-size:13px; }
+
+/* Ajuste em telas grandes para posicionamento um pouco deslocado */
+@media(min-width:900px) {
+  .sheet { left: auto; right: 40px; bottom: 40px; }
+  #map { margin:20px; border-radius:10px; }
+  .quick-menu { right: 40px; top: 72px; }
+}

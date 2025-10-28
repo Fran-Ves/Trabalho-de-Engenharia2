@@ -32,6 +32,60 @@ body { font-family: -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial; ba
   border:1px solid rgba(17,24,39,0.04);
 }
 
+/* Route panel (compact, white background) */
+.route-panel {
+  position: absolute;
+  right: 20px;
+  top: 76px;
+  width: 220px;
+  max-height: 40vh;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(12,24,48,0.16);
+  z-index: 1250;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.route-panel.hidden { display:none; }
+.route-panel-header { display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid #eef2f7; }
+.route-panel-header #routePanelTitle { font-weight:700; color:#0b2540; font-size:12px; }
+.route-panel-list { list-style:none; margin:0; padding:6px; overflow:auto; font-size:12px; }
+.route-panel-list li { padding:6px; border-radius:8px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.route-panel-list li + li { margin-top:6px; }
+.route-panel-list .name { font-weight:600; color:#0b2540; }
+.route-panel-list .price { font-weight:700; color:#00bfa5; font-size:12px; }
+
+@media (max-width: 480px) {
+  .route-panel { right: 12px; top: 68px; width: 200px; }
+}
+
+/* Sidebar lateral */
+.leaflet-routing-container { display: none !important; }
+.sidebar {
+  position: absolute;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  width: 320px;
+  background: #ffffff;
+  border-left: 1px solid #eef2f7;
+  box-shadow: -8px 0 24px rgba(12,24,48,0.08);
+  z-index: 1500;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar.hidden { display:none; }
+.sidebar-header { display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid #eef2f7; }
+.sidebar-title { font-weight:800; color:#0b2540; }
+.sidebar-section { padding:8px 10px; border-bottom:1px solid #f3f4f6; }
+.sidebar-subtitle { font-weight:700; color:#0b2540; font-size:13px; margin-bottom:6px; }
+.route-info-compact { font-size:12px; color:#475569; margin-bottom:6px; }
+
+@media (max-width: 900px) {
+  #map { margin-right: 332px; }
+}
+
 /* Sheets (bottom modals) */
 .sheet {
   position: fixed; left: 8px; right: 8px; bottom: 12px; z-index:1200;
@@ -61,6 +115,39 @@ button#saveUserBtn, button#savePostoBtn, button#savePricesBtn {
   flex:1; background:#1976d2; color:white; border:none; padding:10px; border-radius:8px; font-weight:700;
 }
 .btn-secondary { flex:1; background:#eef2f7; border:none; padding:10px; border-radius:8px; }
+
+/* Route Stations List */
+.station-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0;
+}
+.route-station-item {
+  background: #f8f9fa;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.station-info b {
+  font-weight: 700;
+  color: #1976d2;
+}
+.price-tag {
+  font-weight: 600;
+  color: #00bfa5; /* Cor verde para destaque de preço */
+  background: #e0f7fa;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+.price-tag:contains("Sem preço") {
+  color: #6c757d;
+  background: #e9ecef;
+}
 
 /* Profile content */
 #profileContent { padding:6px 0; }

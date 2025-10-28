@@ -36,11 +36,29 @@
     <button id="quickCadastrarPosto" class="quick-item"><i class="fa-solid fa-gas-pump"></i> Cadastrar Posto</button>
     <button id="quickCadastrarUser" class="quick-item"><i class="fa-solid fa-user-plus"></i> Cadastrar-se</button>
     <button id="quickTraçarRotas" class="quick-item"><i class="fa-solid fa-route"></i> Traçar rotas</button>
+    <button id="quickVerRotas" class="quick-item hidden"><i class="fa-solid fa-list-ul"></i> Ver Postos na Rota</button>
   </div>
 
   <!-- Main: mapa (tela principal) -->
   <main id="main">
     <div id="map" role="application" aria-label="Mapa de postos"></div>
+    <!-- Sidebar lateral: ações e informações da rota -->
+    <aside id="sidebar" class="sidebar hidden" aria-hidden="true">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Menu</div>
+        <button id="sidebarClose" class="icon-btn" title="Fechar"><i class="fa-solid fa-xmark" style="color:#0b2540"></i></button>
+      </div>
+      <div class="sidebar-section">
+        <button id="sbCadastrarPosto" class="quick-item"><i class="fa-solid fa-gas-pump"></i> Cadastrar Posto</button>
+        <button id="sbCadastrarUser" class="quick-item"><i class="fa-solid fa-user-plus"></i> Cadastrar-se</button>
+        <button id="sbTracarRotas" class="quick-item"><i class="fa-solid fa-route"></i> Traçar rotas</button>
+      </div>
+      <div class="sidebar-section">
+        <div class="sidebar-subtitle">Postos na rota (por preço)</div>
+        <div id="routeInfoCompact" class="route-info-compact">Nenhuma rota</div>
+        <ul id="routeSidebarList" class="route-panel-list"></ul>
+      </div>
+    </aside>
   </main>
 
   <!-- TELA: Cadastro Usuário (full screen) -->
@@ -90,6 +108,20 @@
     </div>
   </section>
 
+  <!-- TELA: Rotas (full screen) -->
+  <section id="screenRoute" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Postos na Rota</h2>
+      <p class="muted">Postos encontrados em um raio de 200m da rota, ordenados por preço (Gasolina).</p>
+      <ul id="routeStationsList" class="station-list">
+        <!-- Lista de postos será injetada aqui -->
+      </ul>
+      <div class="actions">
+        <button type="button" id="backFromRouteBtn" class="btn-secondary">Voltar ao Mapa</button>
+      </div>
+    </div>
+  </section>
+
   <!-- TELA: Edição de Preços (full screen) -->
   <section id="screenEditPrices" class="screen hidden" aria-hidden="true">
     <div class="screen-inner">
@@ -111,8 +143,11 @@
 
   <div id="toast" class="toast hidden"></div>
 
-  <!-- Scripts: Leaflet e app -->
+  <!-- Scripts: Leaflet e dependências -->
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+  <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+  <!-- App script (carrega por último após dependências) -->
   <script src="script.js"></script>
 
   <!-- SW -->

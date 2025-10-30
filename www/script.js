@@ -360,6 +360,89 @@ function renderAllMarkers(filter = '') {
   });
 }
 
+function openDenounceScreen() {
+  showScreen('screenDenounce');
+  renderDenounceStep1();
+}
+
+function renderDenounceStep1() {
+  const select = document.getElementById('denouncePostoSelect');
+  const step1 = document.getElementById('denounceStep1');
+  const step2 = document.getElementById('denounceStep2');
+  step2.classList.add('hidden');
+  step1.classList.remove('hidden');
+
+  select.innerHTML = '<option value="">-- Escolha um posto --</option>';
+  gasData.forEach(p => {
+    if (!p.name) return;
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    select.appendChild(opt);
+  });
+}
+
+function renderDenounceStep2(postoId) {
+  const posto = gasData.find(p => p.id === postoId);
+  if (!posto) return showToast('Posto não encontrado');
+
+  const step1 = document.getElementById('denounceStep1');
+  const step2 = document.getElementById('denounceStep2');
+  step1.classList.add('hidden');
+  step2.classList.remove('hidden');
+
+  const nameEl = document.getElementById('denouncePostoName');
+  nameEl.textContent = posto.name;
+
+  const fuelDiv = document.getElementById('denounceFuelOptions');
+  fuelDiv.innerHTML = '';
+  const fuels = posto.prices || {};
+
+  const entries = [
+    ['Gasolina', fuels.gas],
+    ['Etanol', fuels.etanol],
+    ['Diesel', fuels.diesel]
+  ];
+
+  entries.forEach(([label, price]) => {
+    const btn = document.createElement('button');
+    btn.textContent = `${label}: ${price != null ? `R$ ${price}` : 'N/A'}`;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('#denounceFuelOptions button').forEach(b => b.style.background = '#f8fafc');
+      btn.style.background = '#e0f2fe';
+      fuelDiv.dataset.selectedFuel = label;
+    });
+    fuelDiv.appendChild(btn);
+  });
+}
+
+function submitDenounce() {
+  const select = document.getElementById('denouncePostoSelect');
+  const posto = gasData.find(p => p.id === select.value);
+  const selectedFuel = document.getElementById('denounceFuelOptions').dataset.selectedFuel;
+
+  if (!posto || !selectedFuel) {
+    return showToast('Selecione o combustível incorreto.');
+  }
+
+  const denuncias = JSON.parse(localStorage.getItem('denuncias') || '[]');
+  const novaDenuncia = {
+    postoId: posto.id,
+    postoNome: posto.name,
+    fuel: selectedFuel,
+    userEmail: currentUser?.email || 'Anônimo',
+    date: new Date().toLocaleString()
+  };
+
+  denuncias.push(novaDenuncia);
+  localStorage.setItem('denuncias', JSON.stringify(denuncias));
+
+  hideScreen('screenDenounce');
+  showToast(`Denúncia enviada para ${posto.name}`);
+}
+
+
+
 /* -------------------------
    UI e navegação (screens)
    ------------------------- */
@@ -384,6 +467,91 @@ function setupUI() {
       sb.setAttribute('aria-hidden', sb.classList.contains('hidden') ? 'true' : 'false');
     }
   });
+  
+  document.getElementById('quickLoginUser')?.addEventListener('click', () => {
+    hideQuickMenu();
+    showScreen('screenLoginUser');
+  });
+
+  document.getElementById('sbLoginUser')?.addEventListener('click', () => {
+    // Esconde a sidebar ao abrir a tela de login
+    const sb = document.getElementById('sidebar'); 
+    if (sb) { 
+      sb.classList.add('hidden'); 
+      sb.setAttribute('aria-hidden','true'); 
+    }
+    showScreen('screenLoginUser');
+  });
+
+  // Lógica do botão "Entrar" da tela de Login
+  // Alternância entre login de usuário e posto
+  const btnLoginUser = document.getElementById('btnLoginUser');
+  const btnLoginPosto = document.getElementById('btnLoginPosto');
+  const loginUserFields = document.getElementById('loginUserFields');
+  const loginPostoFields = document.getElementById('loginPostoFields');
+  let loginMode = 'user';
+
+  btnLoginUser?.addEventListener('click', () => {
+    loginMode = 'user';
+    btnLoginUser.style.background = '#1976d2';
+    btnLoginUser.style.color = '#fff';
+    btnLoginPosto.style.background = '#f1f5f9';
+    btnLoginPosto.style.color = '#000';
+    loginUserFields.classList.remove('hidden');
+    loginPostoFields.classList.add('hidden');
+  });
+
+  btnLoginPosto?.addEventListener('click', () => {
+    loginMode = 'posto';
+    btnLoginPosto.style.background = '#1976d2';
+    btnLoginPosto.style.color = '#fff';
+    btnLoginUser.style.background = '#f1f5f9';
+    btnLoginUser.style.color = '#000';
+    loginPostoFields.classList.remove('hidden');
+    loginUserFields.classList.add('hidden');
+  });
+
+  // Botão "Entrar"
+  document.getElementById('loginUserScreenBtn')?.addEventListener('click', () => {
+    if (loginMode === 'user') {
+      const email = document.getElementById('loginEmailScreen').value.trim();
+      const pass = document.getElementById('loginPassScreen').value;
+      if (!email || !pass) return showToast('Preencha e-mail e senha.');
+
+      const user = users.find(u => u.email === email && u.pass === pass && u.type === 'user');
+      if (user) {
+        currentUser = user;
+        saveData();
+        updateProfileIcon();
+        hideScreen('screenLoginUser');
+        showToast(`Bem-vindo(a), ${user.name}!`);
+      } else {
+        showToast('E-mail ou senha incorretos.');
+      }
+
+    } else if (loginMode === 'posto') {
+      const name = document.getElementById('loginPostoNameScreen').value.trim().toLowerCase();
+      const cnpj = document.getElementById('loginPostoCnpjScreen').value.trim();
+      if (!name || !cnpj) return showToast('Preencha nome e CNPJ.');
+
+      const normalizeCNPJ = c => c.replace(/\D/g, '');
+      const posto = gasData.find(p => 
+        p.name.toLowerCase() === name &&
+        normalizeCNPJ(p.cnpj) === normalizeCNPJ(cnpj)
+      );
+      
+      if (posto) {
+        currentUser = { id: posto.id, name: posto.name, cnpj: posto.cnpj, type: 'posto', postoId: posto.id };
+        saveData();
+        updateProfileIcon();
+        hideScreen('screenLoginUser');
+        showToast(`Posto ${posto.name} conectado!`);
+      } else {
+        showToast('Nome ou CNPJ incorretos.');
+      }
+    }
+  });
+
 
   document.addEventListener('click', (ev) => {
     const qm = document.getElementById('quickMenu');
@@ -441,7 +609,62 @@ function setupUI() {
     const p = document.getElementById('routePanel'); if (p) { p.classList.add('hidden'); p.setAttribute('aria-hidden','true'); }
   });
 
-  document.getElementById('searchInput')?.addEventListener('input', (e) => renderAllMarkers(e.target.value));
+  const searchInput = document.getElementById('searchInput');
+  const searchResults = document.getElementById('searchResults');
+
+  if (searchInput && searchResults) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.trim().toLowerCase();
+      if (!query) {
+        searchResults.classList.add('hidden');
+        renderAllMarkers('');
+        return;
+      }
+
+      const matches = gasData.filter(p => p.name && p.name.toLowerCase().includes(query));
+      renderAllMarkers(query);
+
+      if (matches.length === 0) {
+        searchResults.innerHTML = `<div>Nenhum posto encontrado</div>`;
+        searchResults.classList.remove('hidden');
+        return;
+      }
+
+      searchResults.innerHTML = matches
+        .map(p => `<div data-id="${p.id}">${escapeHtml(p.name)}</div>`)
+        .join('');
+      searchResults.classList.remove('hidden');
+    });
+
+    // Clique em resultado
+    searchResults.addEventListener('click', (e) => {
+      const div = e.target.closest('div[data-id]');
+      if (!div) return;
+      const id = div.dataset.id;
+      const posto = gasData.find(p => p.id === id);
+      if (!posto || !posto.coords) return;
+
+      map.setView([posto.coords[0], posto.coords[1]], 17);
+
+      // abrir popup do marcador correspondente
+      const markerLayer = gasMarkers.getLayers().find(m => {
+        const ll = m.getLatLng?.();
+        return ll && ll.lat === posto.coords[0] && ll.lng === posto.coords[1];
+      });
+      if (markerLayer) markerLayer.openPopup();
+
+      searchResults.classList.add('hidden');
+      searchInput.value = posto.name;
+    });
+
+  // Ocultar lista ao clicar fora
+  document.addEventListener('click', (e) => {
+    if (!searchResults.contains(e.target) && e.target !== searchInput) {
+      searchResults.classList.add('hidden');
+    }
+  });
+}
+
 
   // back topbar
   document.getElementById('topbarBackBtn')?.addEventListener('click', () => {
@@ -460,6 +683,28 @@ function setupUI() {
   document.getElementById('backFromUser')?.addEventListener('click', () => hideScreen('screenRegisterUser'));
   document.getElementById('backFromPosto')?.addEventListener('click', () => hideScreen('screenRegisterPosto'));
   document.getElementById('backFromProfile')?.addEventListener('click', () => hideScreen('screenProfile'));
+
+  document.getElementById('nextToDenouncePricesBtn')?.addEventListener('click', () => {
+    const select = document.getElementById('denouncePostoSelect');
+    if (!select.value) return showToast('Selecione um posto primeiro');
+    renderDenounceStep2(select.value);
+  });
+  
+  document.getElementById('cancelDenounceBtn')?.addEventListener('click', () => {
+    hideScreen('screenDenounce');
+  });
+  
+  document.getElementById('backToDenounceSelectBtn')?.addEventListener('click', () => {
+    const fuelDiv = document.getElementById('denounceFuelOptions');
+    if (fuelDiv) fuelDiv.dataset.selectedFuel = '';
+    renderDenounceStep1();
+  });
+  
+  
+  document.getElementById('submitDenounceBtn')?.addEventListener('click', () => {
+    submitDenounce();
+  });
+  
 
   // salvar usuário
   document.getElementById('saveUserScreenBtn')?.addEventListener('click', () => {
@@ -563,97 +808,103 @@ function hideScreen(id) {
   }
 }
 
-function renderProfileScreen(focusPostoId = null) {
-  const container = document.getElementById('profileContentScreen');
-  if (!container) return;
-  container.innerHTML = '';
+function renderProfileScreen() {
+  const content = document.getElementById('profileContentScreen');
+  let html = '';
 
-  if (!currentUser && !focusPostoId) {
-    container.innerHTML = `
-      <div style="padding:12px">
-        <h3>Bem-vindo</h3>
-        <p class="muted">Cadastre-se como usuário ou posto para acessar funcionalidades.</p>
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button id="profileGotoCadScreen">Cadastrar</button>
-          <button id="profileCloseBtnScreen" class="btn-secondary">Fechar</button>
-        </div>
-      </div>`;
-    document.getElementById('profileGotoCadScreen')?.addEventListener('click', ()=>{ hideScreen('screenProfile'); showScreen('screenRegisterUser'); });
-    document.getElementById('profileCloseBtnScreen')?.addEventListener('click', ()=> hideScreen('screenProfile'));
-    return;
-  }
-
-  if (focusPostoId) {
-    const posto = gasData.find(s => s.id === focusPostoId);
-    if (!posto) { container.innerHTML = '<p>Posto não encontrado</p>'; return; }
-    container.innerHTML = `
+  if (!currentUser) {
+    html = `
+      <p>Você ainda não está logado.</p>
+      <div class="actions">
+        <button type="button" id="gotoRegisterBtn">Cadastrar-se</button>
+      </div>
+    `;
+  } 
+  else if (currentUser.type === 'posto') {
+    html += `
       <div class="profile-card">
         <div class="profile-avatar"><i class="fa-solid fa-gas-pump"></i></div>
         <div class="profile-info">
-          <div style="font-weight:700">${escapeHtml(posto.name)}</div>
-          <div class="muted">${escapeHtml(posto.cnpj)}</div>
-          <div style="margin-top:8px">Preços:
-            <div class="muted">Gasolina: ${posto.prices.gas || '--'}</div>
-            <div class="muted">Etanol: ${posto.prices.etanol || '--'}</div>
-            <div class="muted">Diesel: ${posto.prices.diesel || '--'}</div>
-          </div>
+          <b>${currentUser.name}</b><br>
+          <span class="muted">CNPJ: ${currentUser.cnpj || '-'}</span>
         </div>
       </div>
-      <div style="margin-top:12px"><button id="profileCloseViewScreen" class="btn-secondary">Fechar</button></div>
+      <div class="profile-actions">
+        <button id="editPricesBtn">Editar preços</button>
+        <button id="logoutBtn" class="btn-secondary">Sair</button>
+      </div>
     `;
-    document.getElementById('profileCloseViewScreen')?.addEventListener('click', ()=> hideScreen('screenProfile'));
-    return;
-  }
 
-  if (currentUser && currentUser.type === 'user') {
-    container.innerHTML = `
+    // Mostrar denúncias recebidas
+    const denuncias = JSON.parse(localStorage.getItem('denuncias') || '[]');
+    const minhasDenuncias = denuncias.filter(d => d.postoId === currentUser.id);
+
+    html += `
+      <h3>Denúncias Recebidas</h3>
+      ${
+        minhasDenuncias.length > 0
+          ? `<ul class="station-list">
+              ${minhasDenuncias.map(d => `
+                <li class="route-station-item">
+                  <div class="station-info">
+                    <b>${d.fuel}</b><br>
+                    <span class="muted">Denunciado por: ${d.userEmail}</span><br>
+                    <span class="muted">${d.date}</span>
+                  </div>
+                </li>`).join('')}
+            </ul>`
+          : `<p class="muted">Nenhuma denúncia recebida até agora.</p>`
+      }
+    `;
+  } 
+  else if (currentUser.type === 'user') {
+    html += `
       <div class="profile-card">
         <div class="profile-avatar"><i class="fa-solid fa-user"></i></div>
         <div class="profile-info">
-          <div style="font-weight:700">${escapeHtml(currentUser.name)}</div>
-          <div class="muted">${escapeHtml(currentUser.email || '')}</div>
+          <b>${currentUser.name}</b><br>
+          <span class="muted">${currentUser.email}</span>
         </div>
       </div>
-      <div style="margin-top:12px">
-        <button id="denounceBtnScreen" class="btn-secondary">Denunciar posto por preços falsos</button>
-        <button id="logoutBtnScreen" style="margin-left:8px;background:#e11d48">Sair</button>
+      <div class="profile-actions">
+        <button id="denounceBtnScreen">Denunciar posto por preços falsos</button>
+        <button id="logoutBtn" class="btn-secondary">Sair</button>
       </div>
     `;
-    document.getElementById('denounceBtnScreen')?.addEventListener('click', ()=> alert('Denúncia simulada.'));
-    document.getElementById('logoutBtnScreen')?.addEventListener('click', ()=> { currentUser = null; saveData(); updateProfileIcon(); hideScreen('screenProfile'); showToast('Desconectado'); });
-    return;
   }
 
-  if (currentUser && currentUser.type === 'posto') {
-    const posto = gasData.find(s => s.id === currentUser.postoId);
-    container.innerHTML = `
-      <div class="profile-card">
-        <div class="profile-avatar"><i class="fa-solid fa-gas-pump"></i></div>
-        <div class="profile-info">
-          <div style="font-weight:700">${escapeHtml(posto ? posto.name : currentUser.name)}</div>
-          <div class="muted">${posto ? escapeHtml(posto.cnpj) : ''}</div>
-        </div>
-      </div>
-      <div style="margin-top:12px">
-        <button id="editPricesBtnScreen">Editar preços de combustível</button>
-        <button id="logoutPostoBtnScreen" style="margin-left:8px;background:#e11d48">Sair</button>
-      </div>
-    `;
-    document.getElementById('editPricesBtnScreen')?.addEventListener('click', ()=> {
-      if (!posto) { showToast('Posto vinculado não encontrado'); return; }
-      previousScreenId = 'screenProfile';
-      hideScreen('screenProfile');
-      const elName = document.getElementById('editPostoName');
-      if (elName) { elName.textContent = posto.name; elName.dataset.postoId = posto.id; }
-      document.getElementById('priceGas').value = posto.prices.gas || '';
-      document.getElementById('priceEtanol').value = posto.prices.etanol || '';
-      document.getElementById('priceDiesel').value = posto.prices.diesel || '';
-      showScreen('screenEditPrices');
-    });
-    document.getElementById('logoutPostoBtnScreen')?.addEventListener('click', ()=> { currentUser = null; saveData(); updateProfileIcon(); hideScreen('screenProfile'); showToast('Desconectado'); });
-    return;
-  }
-}
+  content.innerHTML = html;
+
+  document.getElementById('editPricesBtn')?.addEventListener('click', () => {
+    if (currentUser && currentUser.type === 'posto' && currentUser.postoId) {
+      // Chama a função que abre a tela de edição
+      openEditPricesForPosto(currentUser.postoId);
+    } else {
+      showToast('Erro: Não foi possível identificar o posto.');
+    }
+  });
+
+  // Botão sair
+  document.getElementById('logoutBtn')?.addEventListener('click', () => {
+    currentUser = null;
+    localStorage.removeItem('currentUser');
+    showToast('Você saiu da conta');
+    hideScreen('screenProfile');
+  });
+
+  // Botão de denúncia (abre tela)
+  document.getElementById('denounceBtnScreen')?.addEventListener('click', () => {
+    hideScreen('screenProfile');
+
+    openDenounceScreen();
+  });
+
+  // Redirecionar para cadastro
+  document.getElementById('gotoRegisterBtn')?.addEventListener('click', () => {
+    hideScreen('screenProfile');
+    showScreen('screenRegisterUser');
+  });
+}  
 
 /* -------------------------
    Helpers / small utilities

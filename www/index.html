@@ -27,6 +27,7 @@
     <div class="search-wrap">
       <input id="searchInput" type="search" placeholder="Buscar posto por nome..." />
     </div>
+    <div id="searchResults" class="search-results hidden"></div>
     <!-- botão + -->
     <button id="addBtn" class="icon-btn" title="Cadastrar"><i class="fa-solid fa-plus"></i></button>
   </header>
@@ -37,6 +38,10 @@
     <button id="quickCadastrarUser" class="quick-item"><i class="fa-solid fa-user-plus"></i> Cadastrar-se</button>
     <button id="quickTraçarRotas" class="quick-item"><i class="fa-solid fa-route"></i> Traçar rotas</button>
     <button id="quickVerRotas" class="quick-item hidden"><i class="fa-solid fa-list-ul"></i> Ver Postos na Rota</button>
+  </div>
+  <div id="quickMenu" class="quick-menu hidden" aria-hidden="true">
+    <button id="quickLoginUser" class="quick-item"><i class="fa-solid fa-right-to-bracket"></i> Entrar (Login)</button>
+    <button id="quickCadastrarPosto" class="quick-item"><i class="fa-solid fa-gas-pump"></i> Cadastrar Posto</button>
   </div>
 
   <!-- Main: mapa (tela principal) -->
@@ -57,6 +62,10 @@
         <div class="sidebar-subtitle">Postos na rota (por preço)</div>
         <div id="routeInfoCompact" class="route-info-compact">Nenhuma rota</div>
         <ul id="routeSidebarList" class="route-panel-list"></ul>
+      </div>
+      <div class="sidebar-section">
+        <button id="sbLoginUser" class="quick-item"><i class="fa-solid fa-right-to-bracket"></i> Entrar (Login)</button>
+        <button id="sbCadastrarPosto" class="quick-item"><i class="fa-solid fa-gas-pump"></i> Cadastrar Posto</button>
       </div>
     </aside>
   </main>
@@ -100,11 +109,71 @@
     </div>
   </section>
 
+  <!-- TELA: Denúncia de preços falsos -->
+  <section id="screenDenounce" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Denunciar Posto</h2>
+      <div id="denounceStep1">
+        <label for="denouncePostoSelect">Selecione o posto</label>
+        <select id="denouncePostoSelect">
+          <option value="">-- Escolha um posto --</option>
+        </select>
+        <div class="actions">
+          <button type="button" id="nextToDenouncePricesBtn">Próximo</button>
+          <button type="button" id="cancelDenounceBtn" class="btn-secondary">Cancelar</button>
+        </div>
+      </div>
+
+      <div id="denounceStep2" class="hidden">
+        <h3 id="denouncePostoName"></h3>
+        <p class="muted">Selecione o combustível com preço incorreto:</p>
+        <div id="denounceFuelOptions"></div>
+        <div class="actions">
+          <button type="button" id="submitDenounceBtn">Enviar denúncia</button>
+          <button type="button" id="backToDenounceSelectBtn" class="btn-secondary">Voltar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
   <!-- TELA: Perfil (full screen) -->
   <section id="screenProfile" class="screen hidden" aria-hidden="true">
     <div class="screen-inner">
       <h2>Perfil</h2>
       <div id="profileContentScreen"></div>
+    </div>
+  </section>
+
+  <!-- TELA: Login (full screen) -->
+
+  <section id="screenLoginUser" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Entrar (Login)</h2>
+      <form id="formLoginScreen" class="form-screen">
+        <div class="choice-row">
+          <button type="button" id="btnLoginUser" class="choice">Usuário</button>
+          <button type="button" id="btnLoginPosto" class="choice">Posto</button>
+        </div>
+      
+        <div id="loginUserFields">
+          <label>E-mail</label>
+          <input id="loginEmailScreen" type="email" placeholder="exemplo@dominio.com" />
+          <label>Senha</label>
+          <input id="loginPassScreen" type="password" placeholder="senha" />
+        </div>
+      
+        <div id="loginPostoFields" class="hidden">
+          <label>Nome do Posto</label>
+          <input id="loginPostoNameScreen" type="text" placeholder="Nome do posto" />
+          <label>CNPJ</label>
+          <input id="loginPostoCnpjScreen" type="text" placeholder="00.000.000/0000-00" />
+        </div>
+      
+        <div class="actions">
+          <button type="button" id="loginUserScreenBtn">Entrar</button>
+        </div>
+      </form>      
     </div>
   </section>
 

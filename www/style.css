@@ -239,3 +239,61 @@ button#saveUserBtn, button#savePostoBtn, button#savePricesBtn {
   #map { margin:20px; border-radius:10px; }
   .quick-menu { right: 40px; top: 72px; }
 }
+
+/* Resultados da busca */
+.search-results {
+  position: absolute;
+  top: 56px; /* abaixo da barra superior */
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 560px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+  z-index: 2000;
+  overflow: hidden;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.search-results.hidden { display: none; }
+.search-results div {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  color: #0b2540;
+  font-weight: 500;
+}
+.search-results div:hover {
+  background: #f1f5f9;
+}
+
+#denounceFuelOptions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+#denounceFuelOptions button {
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-weight: 600;
+  text-align: left;
+}
+#denounceFuelOptions button:hover {
+  background: #f1f5f9;
+}
+
+h3 {
+  color: #0b2540;
+  margin-top: 20px;
+  margin-bottom: 10px;
+  font-size: 18px;
+}
+
+.choice-row .choice.active {
+  background: #1976d2;
+  color: #fff;
+}

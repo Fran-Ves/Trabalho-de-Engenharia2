@@ -20,29 +20,41 @@
 <body>
   <!-- Barra superior fixa: botão voltar (oculto) | perfil | busca | cadastrar -->
   <header id="topbar">
-    <!-- botão voltar global que substitui o "+" quando abrir telas fullscreen -->
-    <button id="topbarBackBtn" class="icon-btn hidden" title="Voltar"><i class="fa-solid fa-arrow-left"></i></button>
-
-    <button id="profileBtn" class="icon-btn" title="Perfil"><i class="fa-solid fa-user"></i></button>
+    <button id="topbarBackBtn" class="icon-btn hidden" title="Voltar">
+        <i class="fa-solid fa-arrow-left"></i>
+    </button>
+    <button id="locationBtn" class="icon-btn" title="Minha Localização">
+        <i class="fa-solid fa-location-crosshairs"></i>
+    </button>
+    <button id="profileBtn" class="icon-btn" title="Perfil">
+        <i class="fa-solid fa-user"></i>
+    </button>
     <div class="search-wrap">
-      <input id="searchInput" type="search" placeholder="Buscar posto por nome..." />
+        <input id="searchInput" type="search" placeholder="Buscar posto por nome..." />
     </div>
-    <div id="searchResults" class="search-results hidden"></div>
-    <!-- botão + -->
-    <button id="addBtn" class="icon-btn" title="Cadastrar"><i class="fa-solid fa-plus"></i></button>
-  </header>
+    <button id="addBtn" class="icon-btn" title="Cadastrar">
+        <i class="fa-solid fa-plus"></i>
+    </button>
+</header>
 
-  <!-- QUICK MENU (canto superior direito) -->
-  <div id="quickMenu" class="quick-menu hidden" aria-hidden="true">
-    <button id="quickCadastrarPosto" class="quick-item"><i class="fa-solid fa-gas-pump"></i> Cadastrar Posto</button>
-    <button id="quickCadastrarUser" class="quick-item"><i class="fa-solid fa-user-plus"></i> Cadastrar-se</button>
-    <button id="quickTraçarRotas" class="quick-item"><i class="fa-solid fa-route"></i> Traçar rotas</button>
-    <button id="quickVerRotas" class="quick-item hidden"><i class="fa-solid fa-list-ul"></i> Ver Postos na Rota</button>
-  </div>
-  <div id="quickMenu" class="quick-menu hidden" aria-hidden="true">
-    <button id="quickLoginUser" class="quick-item"><i class="fa-solid fa-right-to-bracket"></i> Entrar (Login)</button>
-    <button id="quickCadastrarPosto" class="quick-item"><i class="fa-solid fa-gas-pump"></i> Cadastrar Posto</button>
-  </div>
+	  <!-- QUICK MENU (canto superior direito) -->
+	  <section id="minimalRecommendations" class="minimal-recommendations hidden">
+	    <div class="recommendation-card">
+	      <i class="fa-solid fa-triangle-exclamation"></i>
+	      <p>Nenhuma rota traçada ou posto recomendado próximo.</p>
+	    </div>
+	  </section>
+	  <!-- HOME QUICK MENU (botões grandes) -->
+	  <section id="homeQuick" class="home-quick">
+      <div class="home-buttons">
+        <button id="homeBuscar" class="big-btn">Buscar Posto</button>
+        <button id="sbTracarRotas" class="quick-item">
+            <i class="fa-solid fa-route"></i> Traçar nova rota
+        </button>
+        <button id="homeCadastrar" class="big-btn">Cadastrar</button>
+        <button id="homeMotorista" class="big-btn btn-motorista">Modo Motorista</button>
+      </div>
+    </section>
 
   <!-- Main: mapa (tela principal) -->
   <main id="main">
@@ -50,22 +62,37 @@
     <!-- Sidebar lateral: ações e informações da rota -->
     <aside id="sidebar" class="sidebar hidden" aria-hidden="true">
       <div class="sidebar-header">
-        <div class="sidebar-title">Menu</div>
-        <button id="sidebarClose" class="icon-btn" title="Fechar"><i class="fa-solid fa-xmark" style="color:#0b2540"></i></button>
+        <div class="sidebar-title">Postos na Rota</div>
+        <button id="sidebarClose" class="icon-btn" title="Fechar">
+          <i class="fa-solid fa-xmark" style="color:#0b2540"></i>
+        </button>
       </div>
+      
       <div class="sidebar-section">
-        <button id="sbCadastrarPosto" class="quick-item"><i class="fa-solid fa-gas-pump"></i> Cadastrar Posto</button>
-        <button id="sbCadastrarUser" class="quick-item"><i class="fa-solid fa-user-plus"></i> Cadastrar-se</button>
-        <button id="sbTracarRotas" class="quick-item"><i class="fa-solid fa-route"></i> Traçar rotas</button>
-      </div>
-      <div class="sidebar-section">
-        <div class="sidebar-subtitle">Postos na rota (por preço)</div>
-        <div id="routeInfoCompact" class="route-info-compact">Nenhuma rota</div>
+        <!-- Controles de ordenação -->
+        <div class="sort-controls">
+          <button id="sortByPrice" class="sort-btn active">
+            <i class="fa-solid fa-dollar-sign"></i> Por Preço
+          </button>
+          <button id="sortByTrust" class="sort-btn">
+            <i class="fa-solid fa-shield-halved"></i> Por Confiança
+          </button>
+        </div>
+        
+        <!-- Informações da rota -->
+        <div id="routeInfoCompact" class="route-info-compact">Nenhuma rota traçada</div>
+        
+        <!-- Lista de postos -->
         <ul id="routeSidebarList" class="route-panel-list"></ul>
       </div>
+      
       <div class="sidebar-section">
-        <button id="sbLoginUser" class="quick-item"><i class="fa-solid fa-right-to-bracket"></i> Entrar (Login)</button>
-        <button id="sbCadastrarPosto" class="quick-item"><i class="fa-solid fa-gas-pump"></i> Cadastrar Posto</button>
+        <button id="sbCadastrarPosto" class="quick-item">
+          <i class="fa-solid fa-gas-pump"></i> Cadastrar Posto
+        </button>
+        <button id="sbTracarRotas" class="quick-item">
+          <i class="fa-solid fa-route"></i> Traçar nova rota
+        </button>
       </div>
     </aside>
   </main>
@@ -90,23 +117,26 @@
 
   <!-- TELA: Cadastro Posto (full screen) -->
   <section id="screenRegisterPosto" class="screen hidden" aria-hidden="true">
-    <div class="screen-inner">
-      <h2>Cadastrar Posto</h2>
-      <form id="formPostoScreen" class="form-screen">
-        <label>Nome do Posto</label>
-        <input id="postoNameScreen" type="text" placeholder="Nome do posto" />
-        <label>CNPJ</label>
-        <input id="postoCnpjScreen" type="text" placeholder="00.000.000/0000-00" />
-        <label>Localização</label>
-        <div class="loc-row">
-          <button type="button" id="selectOnMapScreenBtn">Selecionar no mapa</button>
-          <span id="locInfoScreen" class="muted">Nenhum local selecionado</span>
-        </div>
-        <div class="actions">
-          <button type="button" id="savePostoScreenBtn">Salvar cadastro</button>
-        </div>
-      </form>
-    </div>
+      <div class="screen-inner">
+          <h2>Cadastrar Posto</h2>
+          <form id="formPostoScreen" class="form-screen">
+              <label>Nome do Posto</label>
+              <input id="postoNameScreen" type="text" placeholder="Nome do posto" />
+              <label>CNPJ</label>
+              <input id="postoCnpjScreen" type="text" placeholder="00.000.000/0000-00" />
+              <!-- ADICIONE ESTE CAMPO DE SENHA -->
+              <label>Senha</label>
+              <input id="postoPassScreen" type="password" placeholder="Defina uma senha" />
+              <label>Localização</label>
+              <div class="loc-row">
+                  <button type="button" id="selectOnMapScreenBtn">Selecionar no mapa</button>
+                  <span id="locInfoScreen" class="muted">Nenhum local selecionado</span>
+              </div>
+              <div class="actions">
+                  <button type="button" id="savePostoScreenBtn">Salvar cadastro</button>
+              </div>
+          </form>
+      </div>
   </section>
 
   <!-- TELA: Denúncia de preços falsos -->
@@ -209,6 +239,59 @@
       </form>
     </div>
   </section>
+
+
+  <!-- TELA: Modo motorista -->
+  <section id="driverModePanel" class="driver-mode-panel hidden">
+    <div class="driver-header">
+      <h3>Modo Motorista</h3>
+      <button id="exitDriverMode" class="icon-btn">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+    
+    <div class="driver-stations">
+      <div class="driver-station-card">
+        <div class="station-info">
+          <div class="station-name">Posto 1</div>
+          <div class="station-distance">-- km</div>
+        </div>
+        <div class="station-price">R$ --</div>
+        <div class="station-trust">--/10</div>
+      </div>
+      
+      <div class="driver-station-card">
+        <div class="station-info">
+          <div class="station-name">Posto 2</div>
+          <div class="station-distance">-- km</div>
+        </div>
+        <div class="station-price">R$ --</div>
+        <div class="station-trust">--/10</div>
+      </div>
+    </div>
+    
+    <div class="driver-controls">
+      <button id="stopRouteBtn" class="driver-btn stop-route">
+        <i class="fa-solid fa-stop"></i> Parar Rota
+      </button>
+      <button id="toggleDriverMode" class="driver-btn toggle-mode">
+        <i class="fa-solid fa-car-side"></i> Sair do Modo
+      </button>
+    </div>
+  </section>
+  <div id="quickMenu" class="hidden"></div>
+
+  <button id="openDenounceBtn" class="hidden"></button>
+  <button id="confirmPricesBtn" class="hidden"></button>
+  <button id="editPricesBtn" class="hidden"></button>
+  <button id="returnToMapBtn" class="hidden"></button>
+
+  <!-- Botão de traçar rotas usado no modo rápido -->
+  <button id="quickTraçarRotas" class="hidden"></button>
+
+  <button id="sidebarOpen" class="icon-btn">
+    <i class="fa-solid fa-bars"></i>
+  </button>
 
   <div id="toast" class="toast hidden"></div>
 

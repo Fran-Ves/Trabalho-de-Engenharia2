@@ -1,946 +1,2057 @@
-/* script.js — versão corrigida (modo "versão 2")
-   - posts reais via Overpass SÓ são buscados quando o usuário entra no fluxo de cadastro/edição de posto
-   - duplicatas removidas, sintaxe corrigida, inicialização do mapa ajustada
-*/
-
 let map;
 let control;
 let gasMarkers;
+let bestValueStations = [];
 let gasData = [];
-let _bufferLayer = null;
 let users = [];
 let currentUser = null;
 let tempMarker = null;
 let selectingLocationForPosto = false;
-let returnScreenId = null;
 let previousScreenId = null;
 let currentScreenId = null;
-let _overpassDebounceId = null;
-let _suppressMoveendFetch = false;
 
 let selectingWaypoints = false;
 let tempWaypoints = [];
 let tempWayMarkers = [];
-let routeFoundStations = []; // postos encontrados na rota
+let routeFoundStations = [];
 
-// controle: buscar Overpass apenas quando permitido (modo edição de posto)
-let allowOverpass = false;
+let pendingPrices = {};
+let certifications = {};
+let priceHistory = {};
 
-document.addEventListener('DOMContentLoaded', () => {
-  loadData();
-  initMap();
-  setupUI();
-  renderAllMarkers(); // renderiza os postos locais (gasData) — normalmente vazio até cadastros manuais
-  updateProfileIcon();
+let currentSortMode = 'price'; // 'price' ou 'trust'
+
+let userLocationMarker = null;
+let userAccuracyCircle = null;
+let isTrackingLocation = false;
+let locationWatchId = null;
+
+let driverMode = false;
+let driverStations = [];
+
+let voiceAlertCooldown = {};
+let speechSynthesis = window.speechSynthesis;
+
+// INICIALIZAÇÃO PRINCIPAL - APENAS UMA VEZ
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('🚀 Iniciando aplicação...');
+    
+    // Inicializações básicas
+    loadData();
+    setupUI();
+    initMap();
+    
+    // Configura eventos
+    attachEventListeners();
+    
+    console.log('✅ Aplicação inicializada');
 });
 
-/* -------------------------
-   Persistência (localStorage)
-   ------------------------- */
-function loadData() {
-  try { gasData = JSON.parse(localStorage.getItem('stations') || '[]'); } catch(e) { gasData = []; }
-  try { users = JSON.parse(localStorage.getItem('users') || '[]'); } catch(e) { users = []; }
-  try { currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch(e) { currentUser = null; }
+/* ========== FUNÇÕES DE UI ========== */
+function setupUI() {
+    console.log('🎨 Configurando UI...');
+    
+    // Garante que apenas o mapa esteja visível inicialmente
+    hideAllScreens();
+    
+    // Mostra os botões da home
+    const homeQuick = document.getElementById('homeQuick');
+    if (homeQuick) {
+        homeQuick.classList.remove('hidden');
+        console.log('📱 Botões home mostrados');
+    }
+    
+    // Esconde botão voltar inicialmente
+    const backBtn = document.getElementById('topbarBackBtn');
+    if (backBtn) backBtn.classList.add('hidden');
 }
-function saveData() {
-  localStorage.setItem('stations', JSON.stringify(gasData));
-  localStorage.setItem('users', JSON.stringify(users));
-  localStorage.setItem('currentUser', JSON.stringify(currentUser));
-}
 
-/* -------------------------
-   Inicializa o mapa e control
-   ------------------------- */
-function initMap() {
-  // Coordenadas iniciais: 07º 04' 37" S, 41º 28' 01" W -> (-7.076944, -41.466944)
-  map = L.map('map', { zoomControl: true }).setView([-7.076944, -41.466944], 13);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
-  gasMarkers = L.layerGroup().addTo(map);
-
-  control = L.Routing.control({
-    router: L.Routing.osrmv1({ serviceUrl: 'https://router.project-osrm.org/route/v1' }),
-    waypoints: [],
-    routeWhileDragging: true,
-    fitSelectedRoute: false,
-    show: false
-  }).addTo(map);
-
-  control.on('routesfound', e => {
-    const route = e.routes[0];
-    // route.coordinates é array de {lat, lng}
-    const coordsLonLat = route.coordinates.map(c => [c.lng, c.lat]); // turf espera [lon, lat] em pontos, mas lineString aceita [lon,lat] array
-    routeFoundStations = findStationsAlongRoute(coordsLonLat);
-
-    // Ajustar bounds para rota + postos encontrados
-    const bounds = L.latLngBounds([]);
-    route.coordinates.forEach(c => bounds.extend([c.lat, c.lng]));
-    routeFoundStations.forEach(g => {
-      if (Array.isArray(g.coords) && g.coords.length === 2) {
-        bounds.extend([g.coords[0], g.coords[1]]);
-      }
+function hideAllScreens() {
+    console.log('📺 Escondendo todas as telas...');
+    document.querySelectorAll('.screen').forEach(screen => {
+        screen.classList.add('hidden');
+        screen.setAttribute('aria-hidden', 'true');
     });
-    if (bounds.isValid()) {
-      // Evita disparar fetch por moveend provocado pelo fitBounds
-      _suppressMoveendFetch = true;
-      map.fitBounds(bounds, { padding: [20, 20] });
-      setTimeout(() => { _suppressMoveendFetch = false; }, 800);
-    }
+}
 
-    // garantir marcadores presentes: buscar Overpass uma vez se estiver desativado
-    if (!allowOverpass) {
-      allowOverpass = true;
-      fetchGasStationsFromOverpass().then(() => {
-        renderAllMarkers();
-        renderRouteStationsPanel(routeFoundStations);
-      }).catch(()=>{
-        renderAllMarkers();
-        renderRouteStationsPanel(routeFoundStations);
-      });
-    } else {
-      renderRouteStationsPanel(routeFoundStations);
-    }
-    showToast('Rota traçada. Postos no caminho listados.');
-  });
-
-  // Clique no mapa: seleção de waypoints ou seleção de localização de posto
-  map.on('click', (e) => {
-    if (selectingWaypoints) {
-      const m = L.marker(e.latlng).addTo(map);
-      tempWayMarkers.push(m);
-      tempWaypoints.push([e.latlng.lat, e.latlng.lng]);
-
-      if (tempWaypoints.length === 2) {
-        // Temos dois pontos: traçar rota
-        selectingWaypoints = false;
-
-        try {
-          // Converte para L.latLng e define waypoints
-          control.setWaypoints([
-            L.latLng(tempWaypoints[0][0], tempWaypoints[0][1]),
-            L.latLng(tempWaypoints[1][0], tempWaypoints[1][1])
-          ]);
-        } catch (err) {
-          console.error('Erro ao definir waypoints no control:', err);
-          showToast('Falha ao traçar rota. Veja o console para detalhes.');
+function showScreen(screenId) {
+    console.log('🔄 Mostrando tela:', screenId);
+    
+    // Esconde todas as telas primeiro
+    hideAllScreens();
+    
+    // Mostra a tela solicitada
+    const screen = document.getElementById(screenId);
+    if (screen) {
+        screen.classList.remove('hidden');
+        screen.setAttribute('aria-hidden', 'false');
+        
+        // Atualiza navegação
+        previousScreenId = currentScreenId;
+        currentScreenId = screenId;
+        
+        // Gerencia botão voltar
+        const backBtn = document.getElementById('topbarBackBtn');
+        if (backBtn) {
+            if (screenId === 'main') {
+                backBtn.classList.add('hidden');
+            } else {
+                backBtn.classList.remove('hidden');
+            }
         }
+        
+        console.log('✅ Tela mostrada:', screenId);
+    }
+}
 
-        // remove marcadores temporários
-        tempWayMarkers.forEach(x => map.removeLayer(x));
-        tempWayMarkers = [];
-        tempWaypoints = [];
+function hideScreen(screenId) {
+    const screen = document.getElementById(screenId);
+    if (screen) {
+        screen.classList.add('hidden');
+        screen.setAttribute('aria-hidden', 'true');
+    }
+    showScreen('main'); // Volta para o mapa
+}
 
-        // Botão "Traçar Rotas"
-        document.getElementById('quickTraçarRotas')?.addEventListener('click', () => {
-          hideQuickMenu();
-          selectingWaypoints = true;
-          control.setWaypoints([]);
-          if (_bufferLayer) { map.removeLayer(_bufferLayer); _bufferLayer = null; }
-          routeFoundStations = [];
-          document.getElementById('quickVerRotas')?.classList.add('hidden');
-
-          tempWaypoints = [];
-          tempWayMarkers.forEach(m => map.removeLayer(m));
-          tempWayMarkers = [];
-
-          { const el = document.getElementById('quickTraçarRotas'); if (el) el.textContent = 'Selecione 2 pontos no mapa...'; }
-          showToast('Modo traçar rotas ativado. Selecione 2 pontos no mapa.');
+/* ========== EVENT LISTENERS ========== */
+function attachEventListeners() {
+    console.log('🔗 Anexando event listeners...');
+    
+    // === BOTÕES PRINCIPAIS DA HOME ===
+    const homeBuscar = document.getElementById('homeBuscar');
+    const homeTraçar = document.getElementById('homeTraçar');
+    const homeCadastrar = document.getElementById('homeCadastrar');
+    
+    if (homeBuscar) {
+        homeBuscar.addEventListener('click', function() {
+            console.log('🔍 Botão Buscar clicado');
+            document.getElementById('searchInput')?.focus();
         });
-
-
-      }
     }
-    if (selectingLocationForPosto) {
-      if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
-      tempMarker = L.marker(e.latlng, { draggable: true }).addTo(map);
-      selectingLocationForPosto = false;
-      if (returnScreenId) showScreen(returnScreenId);
-
-      const el = document.getElementById('locInfoScreen') || document.getElementById('locInfo');
-      if (el) el.textContent = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
-      showToast('Local selecionado. Retorne à tela de cadastro para salvar.');
+    
+    if (homeTraçar) {
+        homeTraçar.addEventListener('click', function() {
+            console.log('🛣️ Botão Traçar Rota clicado');
+            startRouteMode();
+        });
     }
-   });
+    
+    if (homeCadastrar) {
+        homeCadastrar.addEventListener('click', function() {
+            console.log('➕ Botão Cadastrar clicado');
+            showScreen('screenRegisterPosto');
+        });
+    }
+    
+    // === BOTÕES DA TOPBAR ===
+    const topbarBackBtn = document.getElementById('topbarBackBtn');
+    const profileBtn = document.getElementById('profileBtn');
+    const addBtn = document.getElementById('addBtn');
+    const locationBtn = document.getElementById('locationBtn'); // ADICIONE ESTA LINHA
+    
+    if (topbarBackBtn) {
+        topbarBackBtn.addEventListener('click', function() {
+            console.log('↩️ Botão Voltar clicado');
+            if (previousScreenId) {
+                showScreen(previousScreenId);
+            } else {
+                hideAllScreens();
+                showScreen('main');
+            }
+        });
+    }
+    
+    if (profileBtn) {
+        profileBtn.addEventListener('click', function() {
+            console.log('👤 Botão Perfil clicado');
+            showScreen('screenProfile');
+            renderProfileScreen();
+        });
+    }
+    
+    if (addBtn) {
+        addBtn.addEventListener('click', function(ev) {
+            ev.stopPropagation();
+            console.log('➕ Botão Add clicado');
+            showScreen('screenRegisterPosto');
+        });
+    }
+    
+    if (locationBtn) {
+        locationBtn.addEventListener('click', function() {
+            console.log('📍 Botão Localização clicado');
+            toggleLocationTracking();
+        });
+    }
+    
+    // === BOTÕES DA SIDEBAR ===
+    const sidebarClose = document.getElementById('sidebarClose');
+    const sbCadastrarPosto = document.getElementById('sbCadastrarPosto');
+    const sbTracarRotas = document.getElementById('sbTracarRotas'); // MUDEI O ID AQUI
+    
+    if (sidebarClose) {
+        sidebarClose.addEventListener('click', function() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.classList.add('hidden');
+                adjustHomeButtonsForSidebar(false);
+                console.log('🗂️ Sidebar fechada - botões reposicionados');
+            }
+        });
+    }
+    
+    if (sbCadastrarPosto) {
+        sbCadastrarPosto.addEventListener('click', function() {
+            showScreen('screenRegisterPosto');
+        });
+    }
+    
+    if (sbTracarRotas) {
+        sbTracarRotas.addEventListener('click', function() {
+            // Fecha a sidebar
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.classList.add('hidden');
+                adjustHomeButtonsForSidebar(false);
+            }
+            
+            // Inicia novo traçado de rota
+            startRouteMode();
+        });
+    }
+    
+    // === BOTÕES DE FORMULÁRIOS ===
+    const saveUserBtn = document.getElementById('saveUserScreenBtn');
+    const savePostoBtn = document.getElementById('savePostoScreenBtn');
+    const loginUserBtn = document.getElementById('loginUserScreenBtn');
+    const backFromRouteBtn = document.getElementById('backFromRouteBtn');
+    
+    if (saveUserBtn) {
+        saveUserBtn.addEventListener('click', saveUser);
+    }
+    
+    if (savePostoBtn) {
+        savePostoBtn.addEventListener('click', savePosto);
+    }
+    
+    if (loginUserBtn) {
+        loginUserBtn.addEventListener('click', handleLogin);
+    }
+    
+    if (backFromRouteBtn) {
+        backFromRouteBtn.addEventListener('click', function() {
+            hideScreen('screenRoute');
+        });
+    }
+    
+    // === SELEÇÃO NO MAPA ===
+    const selectOnMapBtn = document.getElementById('selectOnMapScreenBtn');
+    if (selectOnMapBtn) {
+        selectOnMapBtn.addEventListener('click', function() {
+            selectingLocationForPosto = true;
+            hideScreen('screenRegisterPosto');
+            showToast('📍 Toque no mapa para selecionar a localização do posto');
+        });
+    }
 
-  // Só escuta moveend para buscar Overpass se permitido (com debounce)
-  map.on('moveend', () => {
-    if (!allowOverpass) return;
-    if (_suppressMoveendFetch) return;
-    if (_overpassDebounceId) clearTimeout(_overpassDebounceId);
-    _overpassDebounceId = setTimeout(() => {
-      fetchGasStationsFromOverpass();
-    }, 600);
-  });
-}
+    const btnLoginUser = document.getElementById('btnLoginUser');
+    const btnLoginPosto = document.getElementById('btnLoginPosto');
 
-/* -------------------------
-   Overpass: buscar postos reais (somente quando permitido)
-   ------------------------- */
-async function fetchGasStationsFromOverpass() {
-  if (!allowOverpass) return;
-  if (!map) return;
+    if (btnLoginUser) {
+        btnLoginUser.addEventListener('click', function() {
+            switchLoginForm('user');
+        });
+    }
 
-  // mantemos separação de preços salvos localmente
-  const prices = JSON.parse(localStorage.getItem('prices') || '{}');
+	    if (btnLoginPosto) {
+	        btnLoginPosto.addEventListener('click', function() {
+	            switchLoginForm('posto');
+	        });
+	    }
+	
+	    // O botão sbLoginUser não está definido no HTML, removendo a referência para evitar o erro.
+	    // const sbLoginUser = document.getElementById('sbLoginUser');
+	    // if (sbLoginUser) {
+	    //     sbLoginUser.addEventListener('click', function() {
+	    //         showScreen('screenLoginUser');
+	    //         // Garante que comece com o formulário de usuário
+	    //         setTimeout(() => switchLoginForm('user'), 100);
+	    //     });
+	    // }
 
-  // Não limpar marcadores antes para evitar flicker durante timeouts; atualizamos depois
+    // === CONTROLES DE ORDENAÇÃO NA SIDEBAR ===
+    const sortByPrice = document.getElementById('sortByPrice');
+    const sortByTrust = document.getElementById('sortByTrust');
 
-  const bounds = map.getBounds();
-  const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`;
-  const query = `[out:json][timeout:25];node["amenity"="fuel"](${bbox});out;`;
-  const endpoints = [
-    'https://overpass-api.de/api/interpreter',
-    'https://overpass.kumi.systems/api/interpreter'
-  ];
-  let lastErr = null;
+    if (sortByPrice) {
+        sortByPrice.addEventListener('click', function() {
+            currentSortMode = 'price';
+            sortByPrice.classList.add('active');
+            sortByTrust.classList.remove('active');
+            
+            // Re-renderiza a lista se houver postos
+            if (routeFoundStations.length > 0) {
+                renderRouteStationsPanel(routeFoundStations);
+            }
+        });
+    }
+    
+    if (sortByTrust) {
+        sortByTrust.addEventListener('click', function() {
+            currentSortMode = 'trust';
+            sortByTrust.classList.add('active');
+            sortByPrice.classList.remove('active');
+            
+            // Re-renderiza a lista se houver postos
+            if (routeFoundStations.length > 0) {
+                renderRouteStationsPanel(routeFoundStations);
+            }
+        });
+    }
 
-  try {
-    for (const base of endpoints) {
-      try {
-        const url = base + '?data=' + encodeURIComponent(query);
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) {
-          const txt = await res.text();
-          throw new Error(`Unexpected content-type: ${ct} — body starts with: ${txt.slice(0,120)}`);
-        }
-        const json = await res.json();
-        // transform e sair do loop em sucesso
-        const overpassStations = (json.elements || []).map(e => ({
-          id: 'osm_' + e.id,
-          name: e.tags?.name || 'Posto',
-          coords: [e.lat, e.lon],
-          cnpj: e.tags?.ref || '',
-          prices: prices['osm_' + e.id] || { gas: null, etanol: null, diesel: null },
-          osm: true
-        }));
-        const manual = gasData.filter(s => !s.osm);
-        gasData = manual.concat(overpassStations);
-        renderAllMarkers();
+    // === FECHAR SIDEBAR E AJUSTAR BOTÕES ===
+    if (sidebarClose) {
+        sidebarClose.addEventListener('click', function() {
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) {
+                sidebar.classList.add('hidden');
+                adjustHomeButtonsForSidebar(false);
+            }
+	        });
+	    }
+	
+	    // === FECHAR SIDEBAR E AJUSTAR BOTÕES ===
+	    if (sidebarClose) {
+	        sidebarClose.addEventListener('click', function() {
+	            const sidebar = document.getElementById('sidebar');
+	            if (sidebar) {
+	                sidebar.classList.add('hidden');
+	                adjustHomeButtonsForSidebar(false);
+	            }
+	        });
+	    }
+	
+	    // === MODO MOTORISTA ===
+	    const homeMotorista = document.getElementById('homeMotorista');
+	    const exitDriverModeBtn = document.getElementById('exitDriverMode');
+	    const stopRouteBtn = document.getElementById('stopRouteBtn');
+	    const toggleDriverModeBtn = document.getElementById('toggleDriverMode');
+	    
+	    if (homeMotorista) {
+	        homeMotorista.addEventListener('click', function() {
+	            console.log('🚗 Botão Modo Motorista clicado');
+	            enterDriverMode();
+	        });
+	    }
+	    
+	    // Adicionando listeners diretos para os botões do modo motorista
+	    if (exitDriverModeBtn) {
+	        exitDriverModeBtn.addEventListener('click', function(e) {
+	            e.preventDefault();
+	            e.stopPropagation();
+	            console.log('❌ Fechando modo motorista (Botão X)...');
+	            exitDriverModeHandler();
+	        });
+	    }
+	
+	    if (stopRouteBtn) {
+	        stopRouteBtn.addEventListener('click', function(e) {
+	            e.preventDefault();
+	            e.stopPropagation();
+	            console.log('🛑 Parando rota (Botão Parar Rota)...');
+	            stopCurrentRoute();
+	        });
+	    }
+	
+	    if (toggleDriverModeBtn) {
+	        toggleDriverModeBtn.addEventListener('click', function(e) {
+	            e.preventDefault();
+	            e.stopPropagation();
+	            console.log('🚪 Saindo do modo motorista (Botão Sair do Modo)...');
+	            exitDriverModeHandler();
+	        });
+	    }
+	    
+	    // === EVENTOS DE CLICK DELEGADOS (para elementos que podem ser criados dinamicamente) ===
+	    document.addEventListener('click', function(e) {
+	        // Outros eventos de click delegados...
+	    });
+	    
+	    console.log(`🔁 Alternado para formulário de: ${type}`);
+	}
+
+/* ========== FUNÇÕES DO MAPA ========== */
+function initMap() {
+    console.log('🗺️ Inicializando mapa...');
+    
+    const mapContainer = document.getElementById('map');
+    if (!mapContainer) {
+        console.error('❌ Container do mapa não encontrado');
         return;
-      } catch (e) {
-        lastErr = e;
-        continue;
-      }
     }
-    // se chegou aqui, todas falharam
-    throw lastErr || new Error('Overpass indisponível');
-  } catch (err) {
-    console.error("Erro ao buscar Overpass:", err);
-    showToast('Erro ao buscar postos reais (Overpass). Veja console.');
-  }
+    
+    // Posição padrão (caso não tenha localização)
+    const defaultCoords = [-7.076944, -41.466944];
+    
+    // Cria o mapa
+    map = L.map('map').setView(defaultCoords, 13);
+    
+    // Adiciona tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+    
+    // Inicializa layer group para marcadores
+    gasMarkers = L.layerGroup().addTo(map);
+    
+    // INICIALIZAÇÃO CORRETA DO CONTROLE DE ROTA (ADICIONE ESTE BLOCO)
+    control = L.Routing.control({
+        router: L.Routing.osrmv1({ 
+            serviceUrl: 'https://router.project-osrm.org/route/v1' 
+        }),
+        waypoints: [],
+        routeWhileDragging: true,
+        fitSelectedRoutes: true,
+        showAlternatives: false,
+        altLineOptions: {
+            styles: [
+                {color: 'black', opacity: 15, weight: 9},
+                {color: 'white', opacity: 0.8, weight: 6},
+                {color: 'blue', opacity: 0.5, weight: 2}
+            ]
+        },
+        lineOptions: {
+            styles: [
+                {color: 'black', opacity: 0.15, weight: 9},
+                {color: 'white', opacity: 0.8, weight: 6},
+                {color: 'blue', opacity: 0.5, weight: 2}
+            ]
+        },
+        show: false,
+        addWaypoints: false,
+        routeWhileDragging: true,
+        draggableWaypoints: false,
+        fitSelectedRoutes: true
+    }).addTo(map);
+
+    // EVENTO ROUTESFOUND - MANTENHA APENAS ESTE (REMOVA O DUPLICADO)
+    control.on('routesfound', function(e) {
+        const routes = e.routes;
+        const route = routes[0];
+        console.log('🛣️ Rota encontrada');
+        
+        if (route && route.coordinates) {
+            // 1. Encontra os postos na rota
+            const coords = route.coordinates; 
+            routeFoundStations = findStationsAlongRoute(coords);
+            
+            // 2. Atualiza a lista lateral
+            renderRouteStationsPanel(routeFoundStations);
+            
+            // 3. ATUALIZA O MAPA
+            if (gasMarkers) {
+                gasMarkers.clearLayers();
+                
+                routeFoundStations.forEach(station => {
+                    const marker = L.circleMarker(station.coords, {
+                        radius: 12,
+                        color: '#388E3C',
+                        fillColor: '#4CAF50',
+                        fillOpacity: 0.9,
+                        weight: 3
+                    }).addTo(gasMarkers);
+                    
+                    const popupContent = `
+                        <div style="font-weight: bold; margin-bottom: 8px;">${escapeHtml(station.name)}</div>
+                        <div style="color:green; font-weight:bold; font-size:11px;">NA SUA ROTA</div>
+                        <div>Gasolina: R$ ${station.prices?.gas || '--'}</div>
+                    `;
+                    marker.bindPopup(popupContent);
+                });
+            }
+            
+            showToast(`📍 ${routeFoundStations.length} postos encontrados num raio de 50m`);
+            
+            // 4. PERGUNTA SE QUER ATIVAR MODO MOTORISTA
+            if (routeFoundStations.length > 0) {
+                setTimeout(() => {
+                    if (confirm(`Encontramos ${routeFoundStations.length} postos na sua rota! Deseja ativar o modo motorista?`)) {
+                        enterDriverMode();
+                    }
+                }, 1000);
+            }
+        }
+    });
+    
+    // Tenta obter a localização do usuário para posição inicial
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+            function(position) {
+                const userCoords = [position.coords.latitude, position.coords.longitude];
+                map.setView(userCoords, 15);
+                console.log('📍 Mapa iniciado na localização do usuário');
+            },
+            function() {
+                // Usa posição padrão se não conseguir localização
+                map.setView(defaultCoords, 13);
+                console.log('📍 Mapa iniciado na posição padrão');
+            },
+            { timeout: 3000 }
+        );
+    } else {
+        map.setView(defaultCoords, 13);
+    }
+    
+    // Evento de clique no mapa
+    map.on('click', function(e) {
+        if (selectingWaypoints) {
+            handleRoutePointSelection(e);
+        } else if (selectingLocationForPosto) {
+            handleLocationSelection(e);
+        }
+    });
+    
+    // Adiciona alguns postos de exemplo para teste
+    addSampleStations();
+    
+    console.log('✅ Mapa inicializado');
 }
 
-/* -------------------------
-   Render marcadores e lista de rota
-   ------------------------- */
-function findStationsAlongRoute(routeCoords) {
-  // routeCoords: array de [lon, lat] OU [lng, lat]; turf.lineString espera [lon, lat] pontos
-  const line = turf.lineString(routeCoords);
-  const buffer = turf.buffer(line, 0.2, { units: 'kilometers' });
-  const found = [];
-
-  gasData.forEach(g => {
-    if (!g.coords || g.coords.length < 2) return;
-    // turf.point espera [lon, lat]
-    const pt = turf.point([g.coords[1], g.coords[0]]);
-    if (turf.booleanPointInPolygon(pt, buffer)) found.push(g);
-  });
-
-  // Ordena por preço gasolina (se disponível)
-  found.sort((a, b) => {
-    const priceA = (a.prices && a.prices.gas) ? a.prices.gas : Infinity;
-    const priceB = (b.prices && b.prices.gas) ? b.prices.gas : Infinity;
-    if (priceA === priceB) return 0;
-    if (priceA === Infinity) return 1;
-    if (priceB === Infinity) return -1;
-    return priceA - priceB;
-  });
-
-  renderRouteStationsList(found); // legado (tela antiga)
-  renderRouteStationsPanel(found); // novo painel compacto
-
-  if (_bufferLayer) map.removeLayer(_bufferLayer);
-  _bufferLayer = L.geoJSON(buffer, { color: "#1976d2", weight: 2, fillOpacity: 0.1 }).addTo(map);
-  renderAllMarkers(); // para destacar os que estão na rota
-
-  return found;
+function toggleLocationTracking() {
+    if (isTrackingLocation) {
+        stopLocationTracking();
+    } else {
+        startLocationTracking();
+    }
 }
 
-function renderRouteStationsList(stations) {
-  const listEl = document.getElementById('routeStationsList');
-  if (!listEl) return;
-  listEl.innerHTML = '';
+function startLocationTracking() {
+    localStorage.setItem('locationTracking', 'true');
+    console.log('📍 Iniciando rastreamento de localização...');
+    
+    const locationBtn = document.getElementById('locationBtn');
+    if (locationBtn) {
+        locationBtn.classList.add('loading');
+    }
+    
+    if (!navigator.geolocation) {
+        showToast('❌ Geolocalização não suportada neste navegador');
+        return;
+    }
+    
+    // Primeiro obtém a localização atual rapidamente
+    navigator.geolocation.getCurrentPosition(
+        function(position) {
+            updateUserLocation(position);
+            
+            // Agora inicia o watch para atualizações contínuas
+            locationWatchId = navigator.geolocation.watchPosition(
+                updateUserLocation,
+                handleLocationError,
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 10000
+                }
+            );
+            
+            isTrackingLocation = true;
+            if (locationBtn) {
+                locationBtn.classList.remove('loading');
+                locationBtn.classList.add('active');
+            }
+            
+            showToast('📍 Seguindo sua localização');
+        },
+        handleLocationError,
+        {
+            enableHighAccuracy: false, // Mais rápido para primeira obtenção
+            timeout: 5000,
+            maximumAge: 30000
+        }
+    );
+}
 
-  if (!stations || stations.length === 0) {
-    listEl.innerHTML = '<li>Nenhum posto encontrado na rota.</li>';
-    return;
-  }
+function stopLocationTracking() {
+    localStorage.setItem('locationTracking', 'false');
+    console.log('🛑 Parando rastreamento de localização...');
+    
+    if (locationWatchId) {
+        navigator.geolocation.clearWatch(locationWatchId);
+        locationWatchId = null;
+    }
+    
+    isTrackingLocation = false;
+    
+    const locationBtn = document.getElementById('locationBtn');
+    if (locationBtn) {
+        locationBtn.classList.remove('active', 'loading');
+    }
+    
+    // Remove o marcador e círculo de precisão
+    if (userLocationMarker) {
+        map.removeLayer(userLocationMarker);
+        userLocationMarker = null;
+    }
+    
+    if (userAccuracyCircle) {
+        map.removeLayer(userAccuracyCircle);
+        userAccuracyCircle = null;
+    }
+    
+    showToast('📍 Parou de seguir localização');
+}
 
-  stations.forEach(s => {
-    const price = s.prices?.gas;
-    const li = document.createElement('li');
-    li.className = 'route-station-item';
-    li.innerHTML = `
-      <div class="station-info">
-        <b>${escapeHtml(s.name)}</b>
-        <span class="price-tag">${price ? `R$ ${Number(price).toFixed(2)}` : 'Sem preço'}</span>
-      </div>
-    `;
-    listEl.appendChild(li);
-  });
+function findNearbyStations() {
+    if (!userLocationMarker) {
+        showToast('📍 Ative a localização primeiro');
+        return;
+    }
+    
+    const userCoords = userLocationMarker.getLatLng();
+    const nearbyRadius = 2000; // 2km
+    
+    const nearbyStations = gasData.filter(station => {
+        if (!station.coords) return false;
+        
+        const stationLatLng = L.latLng(station.coords[0], station.coords[1]);
+        const distance = map.distance(userCoords, stationLatLng);
+        
+        return distance <= nearbyRadius;
+    });
+    
+    if (nearbyStations.length > 0) {
+        // Ordena por distância
+        nearbyStations.sort((a, b) => {
+            const distA = map.distance(userCoords, L.latLng(a.coords[0], a.coords[1]));
+            const distB = map.distance(userCoords, L.latLng(b.coords[0], b.coords[1]));
+            return distA - distB;
+        });
+        
+        showToast(`📍 ${nearbyStations.length} postos próximos encontrados`);
+        
+        // Foca no posto mais próximo
+        const closestStation = nearbyStations[0];
+        map.setView(closestStation.coords, 15);
+        
+    } else {
+        showToast('📍 Nenhum posto encontrado próximo a você');
+    }
+}
+
+function updateUserLocation(position) {
+    const userCoords = [position.coords.latitude, position.coords.longitude];
+    const accuracy = position.coords.accuracy;
+    
+    console.log('📍 Nova localização:', userCoords, 'Precisão:', accuracy + 'm');
+    
+    // Remove marcadores anteriores
+    if (userLocationMarker) {
+        map.removeLayer(userLocationMarker);
+    }
+    if (userAccuracyCircle) {
+        map.removeLayer(userAccuracyCircle);
+    }
+    
+    // Cria marcador da localização do usuário
+    userLocationMarker = L.marker(userCoords, {
+        icon: L.divIcon({
+            className: 'user-location-marker',
+            iconSize: [16, 16],
+            iconAnchor: [8, 8]
+        }),
+        zIndexOffset: 1000
+    }).addTo(map);
+    
+    // Adiciona círculo de precisão
+    userAccuracyCircle = L.circle(userCoords, {
+        radius: accuracy,
+        color: '#1976d2',
+        fillColor: '#1976d2',
+        fillOpacity: 0.1,
+        weight: 1
+    }).addTo(map);
+    
+    // Centraliza o mapa na localização do usuário (apenas se modo motorista ativo)
+    if (driverMode) {
+        map.setView(userCoords, Math.max(15, map.getZoom()));
+    }
+    
+    // Adiciona efeito de pulso
+    addLocationPulse(userCoords);
+    
+    // Atualiza distâncias no modo motorista
+    if (driverMode) {
+        updateDriverDistances();
+        // VERIFICA ALERTAS DE PROXIMIDADE
+        checkProximityAlerts();
+    }
+}
+function addLocationPulse(coords) {
+    const pulse = L.circleMarker(coords, {
+        radius: 8,
+        color: '#1976d2',
+        fillColor: '#1976d2',
+        fillOpacity: 0.3,
+        weight: 2
+    }).addTo(map);
+    
+    setTimeout(() => {
+        map.removeLayer(pulse);
+    }, 1000);
+}
+
+function handleLocationError(error) {
+    console.error('❌ Erro de localização:', error);
+    
+    const locationBtn = document.getElementById('locationBtn');
+    if (locationBtn) {
+        locationBtn.classList.remove('loading', 'active');
+    }
+    
+    let message = '❌ Erro desconhecido ao obter localização';
+    
+    switch(error.code) {
+        case error.PERMISSION_DENIED:
+            message = '❌ Permissão de localização negada. Ative nas configurações.';
+            break;
+        case error.POSITION_UNAVAILABLE:
+            message = '❌ Localização indisponível. Verifique seu GPS.';
+            break;
+        case error.TIMEOUT:
+            message = '❌ Tempo esgotado ao buscar localização.';
+            break;
+    }
+    
+    showToast(message);
+}
+
+function startRouteMode() {
+    console.log('🛣️ Iniciando modo rota...');
+    
+    // Se já estiver no modo motorista, sai primeiro
+    if (driverMode) {
+        exitDriverMode();
+    }
+    
+    // Fecha sidebar se estiver aberta
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+        sidebar.classList.add('hidden');
+        adjustHomeButtonsForSidebar(false);
+    }
+    
+    selectingWaypoints = true;
+    tempWaypoints = [];
+    
+    // Limpa marcadores anteriores
+    tempWayMarkers.forEach(marker => map.removeLayer(marker));
+    tempWayMarkers = [];
+    
+    showToast('📍 Selecione dois pontos no mapa para traçar a rota');
+}
+
+function handleRoutePointSelection(e) {
+    const marker = L.marker(e.latlng).addTo(map);
+    tempWayMarkers.push(marker);
+    tempWaypoints.push(e.latlng); // Mudança importante: usar objeto LatLng em vez de array
+    
+    console.log(`📍 Ponto ${tempWaypoints.length} selecionado:`, e.latlng);
+    
+    if (tempWaypoints.length === 2) {
+        selectingWaypoints = false;
+        
+        try {
+            // CORREÇÃO: Usar os objetos LatLng diretamente
+            control.setWaypoints(tempWaypoints);
+            showToast('🗺️ Traçando rota...');
+        } catch (err) {
+            console.error('Erro ao traçar rota:', err);
+            showToast('❌ Erro ao traçar rota');
+        }
+    }
+}
+function handleLocationSelection(e) {
+    if (tempMarker) {
+        map.removeLayer(tempMarker);
+    }
+    
+    tempMarker = L.marker(e.latlng, { draggable: true }).addTo(map);
+    selectingLocationForPosto = false;
+    
+    const locInfo = document.getElementById('locInfoScreen');
+    if (locInfo) {
+        locInfo.textContent = `${e.latlng.lat.toFixed(6)}, ${e.latlng.lng.toFixed(6)}`;
+    }
+    
+    showScreen('screenRegisterPosto');
+    showToast('✅ Local selecionado');
+}
+
+/* ========== FUNÇÕES DE DADOS ========== */
+function loadData() {
+    try { gasData = JSON.parse(localStorage.getItem('stations') || '[]'); } catch(e) { gasData = []; }
+    try { users = JSON.parse(localStorage.getItem('users') || '[]'); } catch(e) { users = []; }
+    try { currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch(e) { currentUser = null; }
+    try { pendingPrices = JSON.parse(localStorage.getItem('pendingPrices') || '{}'); } catch(e) { pendingPrices = {}; }
+    try { certifications = JSON.parse(localStorage.getItem('certifications') || '{}'); } catch(e) { certifications = {}; }
+    try { priceHistory = JSON.parse(localStorage.getItem('priceHistory') || '{}'); } catch(e) { priceHistory = {}; }
+    
+    console.log('📊 Dados carregados:', { 
+        stations: gasData.length, 
+        users: users.length,
+        currentUser: !!currentUser 
+    });
+}
+
+function saveData() {
+    localStorage.setItem('stations', JSON.stringify(gasData));
+    localStorage.setItem('users', JSON.stringify(users));
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    localStorage.setItem('pendingPrices', JSON.stringify(pendingPrices));
+    localStorage.setItem('certifications', JSON.stringify(certifications));
+    localStorage.setItem('priceHistory', JSON.stringify(priceHistory));
+}
+
+function addSampleStations() {
+    // Adiciona alguns postos de exemplo se não houver dados
+    if (gasData.length === 0) {
+        const sampleStations = [
+            {
+                id: 'sample_1',
+                name: 'Posto Shell',
+                coords: [-7.076944, -41.466944],
+                prices: { gas: 5.89, etanol: 4.20, diesel: 4.95 }
+            },
+            {
+                id: 'sample_2', 
+                name: 'Posto Ipiranga',
+                coords: [-7.080, -41.470],
+                prices: { gas: 5.75, etanol: 4.15, diesel: 4.85 }
+            }
+        ];
+        
+        gasData.push(...sampleStations);
+        saveData();
+        renderAllMarkers();
+        
+        console.log('📝 Postos de exemplo adicionados');
+    }
+}
+
+/* ========== FUNÇÕES DE RENDERIZAÇÃO ========== */
+function renderAllMarkers() {
+    if (!gasMarkers) return;
+    gasMarkers.clearLayers();
+
+    // 1. Calcula o Trust Score e identifica o Melhor Custo-Benefício (RF02)
+    calculateTrustAndBestValue();
+
+    gasData.forEach(station => {
+        if (!station.coords) return;
+
+        // Define a cor baseada no status
+        let color = '#1976d2'; // Azul padrão
+        let className = '';
+        let radius = 10;
+
+        // RF02: Se for o melhor custo-benefício, ganha destaque especial
+        if (station.isBestValue) {
+            color = '#00c853'; // Verde forte
+            className = 'marker-best-value'; // Classe do CSS que pulsa
+            radius = 14; // Maior
+        }
+
+        const marker = L.circleMarker(station.coords, {
+            radius: radius,
+            color: color,
+            fillColor: color,
+            fillOpacity: 0.8,
+            weight: 2,
+            className: className // Aplica a animação CSS
+        }).addTo(gasMarkers);
+
+        // RF01: Monta o HTML do Popup com verificação
+        let verifiedBadge = station.isVerified 
+            ? `<span class="verified-badge"><i class="fa-solid fa-check-circle"></i> Verificado</span>` 
+            : '';
+
+        let pendingHtml = '';
+        if (station.pendingChanges && station.pendingChanges.length > 0) {
+            const p = station.pendingChanges[0];
+            pendingHtml = `
+                <div class="pending-price-alert">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Alguém informou <b>R$ ${p.price}</b> na Gasolina.
+                    <br>
+                    <button class="btn-confirm-price" onclick="confirmPrice('${station.id}', 0)">Confirmar é verdade</button>
+                </div>
+            `;
+        }
+
+        const popupContent = `
+            <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px;">
+                ${escapeHtml(station.name)} ${station.isBestValue ? '⭐' : ''}
+            </div>
+            <div style="font-size:11px; color:#666; margin-bottom:8px;">
+                Confiabilidade: <b>${station.trustScore || 5.0}/10</b>
+                ${station.isVerified ? '<span class="verified-badge"><i class="fa-solid fa-check-circle"></i> Verificado</span>' : ''}
+            </div>
+            
+            <div style="border-top:1px solid #eee; padding-top:4px;">
+                <div>Gasolina: <b>R$ ${station.prices?.gas || '--'}</b> 
+                    <small style="color:#1976d2; cursor:pointer;" onclick="promptNewPrice('${station.id}', 'gas')">↻</small>
+                </div>
+                <div>Etanol: <b>R$ ${station.prices?.etanol || '--'}</b>
+                    <small style="color:#1976d2; cursor:pointer;" onclick="promptNewPrice('${station.id}', 'etanol')">↻</small>
+                </div>
+                <div>Diesel: <b>R$ ${station.prices?.diesel || '--'}</b>
+                    <small style="color:#1976d2; cursor:pointer;" onclick="promptNewPrice('${station.id}', 'diesel')">↻</small>
+                </div>
+            </div>
+
+            ${getPendingChangesHtml(station)}
+            
+            <div style="margin-top:8px; text-align:center;">
+                <small style="color:#1976d2; cursor:pointer;" onclick="promptNewPrice('${station.id}')">Sugerir Novo Preço</small>
+            </div>
+        `;
+        marker.bindPopup(popupContent);
+    });
+
+    console.log('📍 Marcadores renderizados com RF01 e RF02');
+}
+
+function getPendingChangesHtml(station) {
+    if (!station.pendingChanges || station.pendingChanges.length === 0) return '';
+
+    return station.pendingChanges.map((change, index) => `
+        <div class="pending-price-alert">
+            <i class="fa-solid fa-clock"></i> 
+            <b>${getFuelName(change.type)}:</b> R$ ${change.price} 
+            (${change.votes}/3 confirmações)
+            <br>
+            <button class="btn-confirm-price" onclick="confirmPrice('${station.id}', ${index})">
+                Confirmar este preço
+            </button>
+        </div>
+    `).join('');
 }
 
 function renderRouteStationsPanel(stations) {
-  const sidebar = document.getElementById('sidebar');
-  const list = document.getElementById('routeSidebarList');
-  const info = document.getElementById('routeInfoCompact');
-  if (!sidebar || !list || !info) return;
-  list.innerHTML = '';
-  if (!stations || stations.length === 0) {
-    info.textContent = 'Nenhuma rota';
-    list.innerHTML = '<li><span class="name">Nenhum posto na rota.</span></li>';
-  } else {
-    info.textContent = `${stations.length} postos encontrados`;
-    stations.forEach(s => {
-      const li = document.createElement('li');
-      const price = s.prices?.gas;
-      li.innerHTML = `<span class="name">${escapeHtml(s.name)}</span><span class="price">${price ? `R$ ${Number(price).toFixed(2)}` : '--'}</span>`;
-      li.addEventListener('click', () => {
-        try {
-          const latlng = L.latLng(s.coords[0], s.coords[1]);
-          map.setView(latlng, Math.max(map.getZoom(), 15));
-        } catch(e) {}
-      });
-      list.appendChild(li);
+    const sidebar = document.getElementById('sidebar');
+    const list = document.getElementById('routeSidebarList');
+    const info = document.getElementById('routeInfoCompact');
+    
+    if (!sidebar || !list || !info) return;
+    
+    // Ordena os postos conforme o modo selecionado
+    let sortedStations = [...stations];
+    if (currentSortMode === 'price') {
+        sortedStations.sort((a, b) => {
+            const priceA = a.prices?.gas ? parseFloat(a.prices.gas) : Infinity;
+            const priceB = b.prices?.gas ? parseFloat(b.prices.gas) : Infinity;
+            return priceA - priceB;
+        });
+    } else {
+        sortedStations.sort((a, b) => {
+            const trustA = parseFloat(a.trustScore) || 0;
+            const trustB = parseFloat(b.trustScore) || 0;
+            return trustB - trustA;
+        });
+    }
+    
+    list.innerHTML = '';
+    
+    if (sortedStations.length === 0) {
+        info.textContent = 'Nenhum posto na rota';
+        list.innerHTML = '<li><span class="name">Nenhum posto encontrado</span></li>';
+    } else {
+        info.textContent = `${sortedStations.length} postos na rota (${currentSortMode === 'price' ? 'por preço' : 'por confiança'})`;
+        
+        sortedStations.forEach(station => {
+            const li = document.createElement('li');
+            if (station.isBestValue) {
+                li.classList.add('station-best');
+            }
+            
+            li.innerHTML = `
+                <div>
+                    <span class="name">${escapeHtml(station.name)}</span>
+                    <span class="trust">${station.trustScore || '5.0'}/10</span>
+                </div>
+                <span class="price">R$ ${station.prices?.gas || '--'}</span>
+            `;
+            
+            // Adiciona clique para focar no posto no mapa
+            li.addEventListener('click', function() {
+                if (station.coords) {
+                    map.setView(station.coords, 16);
+                    // Fecha o popup se estiver aberto
+                    map.closePopup();
+                    // Aqui você pode abrir o popup do marcador se quiser
+                }
+            });
+            
+            list.appendChild(li);
+        });
+    }
+    
+    // Mostra a sidebar e ajusta os botões home
+    sidebar.classList.remove('hidden');
+    adjustHomeButtonsForSidebar(true);
+    
+    // Garante que a sidebar tenha scroll se necessário
+    setTimeout(() => {
+        const sidebarContent = sidebar.querySelector('.sidebar-section');
+        if (sidebarContent && sidebarContent.scrollHeight > sidebarContent.clientHeight) {
+            console.log('📜 Sidebar com scroll ativado');
+        }
+    }, 100);
+}
+
+function adjustHomeButtonsForSidebar(sidebarOpen) {
+    const homeQuick = document.getElementById('homeQuick');
+    if (homeQuick) {
+        if (sidebarOpen) {
+            homeQuick.classList.add('sidebar-open');
+            console.log('📐 Botões movidos para evitar sobreposição com sidebar');
+        } else {
+            homeQuick.classList.remove('sidebar-open');
+            console.log('📐 Botões retornaram à posição normal');
+        }
+    }
+}
+
+// Certifique-se de que esta função seja chamada ao abrir ou fechar a sidebar
+const sidebarClose = document.getElementById('sidebarClose');
+if (sidebarClose) {
+    sidebarClose.addEventListener('click', function() {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) {
+            sidebar.classList.add('hidden');
+            adjustHomeButtonsForSidebar(false); // Ajusta os botões ao fechar a sidebar
+        }
     });
-  }
-  sidebar.classList.remove('hidden');
-  sidebar.setAttribute('aria-hidden','false');
 }
 
-function renderAllMarkers(filter = '') {
-  try { gasMarkers.clearLayers(); } catch(e) { gasMarkers = L.layerGroup().addTo(map); }
-
-  const q = (filter || '').trim().toLowerCase();
-
-  gasData.forEach(s => {
-    if (!s.coords || s.coords.length < 2) return;
-    const hasPrice = s.prices && (s.prices.gas || s.prices.etanol || s.prices.diesel);
-    const onRoute = routeFoundStations.some(rs => rs.id === s.id);
-
-    let color = hasPrice ? 'red' : '#1976d2';
-    let radius = 8;
-    if (onRoute) { color = hasPrice ? '#00bfa5' : '#ffc107'; radius = 10; }
-
-    const marker = L.circleMarker([s.coords[0], s.coords[1]], { radius, color, fillOpacity: 0.9, weight: 2 }).addTo(gasMarkers);
-    const popupHtml = `
-      <div style="font-weight:700">${escapeHtml(s.name)}</div>
-      <div style="font-size:13px;color:#444">${escapeHtml(s.cnpj || '')}</div>
-      <div style="margin-top:8px">
-        <p>Gasolina: ${s.prices?.gas != null ? `R$ ${s.prices.gas}` : 'N/A'}</p>
-        <p>Etanol: ${s.prices?.etanol != null ? `R$ ${s.prices.etanol}` : 'N/A'}</p>
-        <p>Diesel: ${s.prices?.diesel != null ? `R$ ${s.prices.diesel}` : 'N/A'}</p>
-      </div>
-      <div style="margin-top:8px"><button id="popup-edit-${s.id}" class="popup-edit">Ver/Editar (Posto)</button></div>
-    `;
-    marker.bindPopup(popupHtml);
-
-    if (q && !s.name.toLowerCase().includes(q)) marker.setStyle({ opacity: 0.25, fillOpacity: 0.25 });
-
-    marker.on('popupopen', () => {
-      setTimeout(() => {
-        const btn = document.getElementById(`popup-edit-${s.id}`);
-        if (btn) btn.addEventListener('click', () => openProfileForPosto(s.id));
-      }, 50);
+const sidebarOpen = document.getElementById('sidebarOpen'); // Adicione um botão para abrir a sidebar, se necessário
+if (sidebarOpen) {
+    sidebarOpen.addEventListener('click', function() {
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) {
+            sidebar.classList.remove('hidden');
+            adjustHomeButtonsForSidebar(true); // Ajusta os botões ao abrir a sidebar
+        }
     });
-    if (onRoute) {
-      try { marker.openPopup(); } catch(e) {}
-    }
-  });
-}
-
-function openDenounceScreen() {
-  showScreen('screenDenounce');
-  renderDenounceStep1();
-}
-
-function renderDenounceStep1() {
-  const select = document.getElementById('denouncePostoSelect');
-  const step1 = document.getElementById('denounceStep1');
-  const step2 = document.getElementById('denounceStep2');
-  step2.classList.add('hidden');
-  step1.classList.remove('hidden');
-
-  select.innerHTML = '<option value="">-- Escolha um posto --</option>';
-  gasData.forEach(p => {
-    if (!p.name) return;
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = p.name;
-    select.appendChild(opt);
-  });
-}
-
-function renderDenounceStep2(postoId) {
-  const posto = gasData.find(p => p.id === postoId);
-  if (!posto) return showToast('Posto não encontrado');
-
-  const step1 = document.getElementById('denounceStep1');
-  const step2 = document.getElementById('denounceStep2');
-  step1.classList.add('hidden');
-  step2.classList.remove('hidden');
-
-  const nameEl = document.getElementById('denouncePostoName');
-  nameEl.textContent = posto.name;
-
-  const fuelDiv = document.getElementById('denounceFuelOptions');
-  fuelDiv.innerHTML = '';
-  const fuels = posto.prices || {};
-
-  const entries = [
-    ['Gasolina', fuels.gas],
-    ['Etanol', fuels.etanol],
-    ['Diesel', fuels.diesel]
-  ];
-
-  entries.forEach(([label, price]) => {
-    const btn = document.createElement('button');
-    btn.textContent = `${label}: ${price != null ? `R$ ${price}` : 'N/A'}`;
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('#denounceFuelOptions button').forEach(b => b.style.background = '#f8fafc');
-      btn.style.background = '#e0f2fe';
-      fuelDiv.dataset.selectedFuel = label;
-    });
-    fuelDiv.appendChild(btn);
-  });
-}
-
-function submitDenounce() {
-  const select = document.getElementById('denouncePostoSelect');
-  const posto = gasData.find(p => p.id === select.value);
-  const selectedFuel = document.getElementById('denounceFuelOptions').dataset.selectedFuel;
-
-  if (!posto || !selectedFuel) {
-    return showToast('Selecione o combustível incorreto.');
-  }
-
-  const denuncias = JSON.parse(localStorage.getItem('denuncias') || '[]');
-  const novaDenuncia = {
-    postoId: posto.id,
-    postoNome: posto.name,
-    fuel: selectedFuel,
-    userEmail: currentUser?.email || 'Anônimo',
-    date: new Date().toLocaleString()
-  };
-
-  denuncias.push(novaDenuncia);
-  localStorage.setItem('denuncias', JSON.stringify(denuncias));
-
-  hideScreen('screenDenounce');
-  showToast(`Denúncia enviada para ${posto.name}`);
-}
-
-
-
-/* -------------------------
-   UI e navegação (screens)
-   ------------------------- */
-function setupUI() {
-  // quick menu ações
-  document.getElementById('quickVerRotas')?.addEventListener('click', () => {
-    hideQuickMenu();
-    renderRouteStationsPanel(routeFoundStations);
-  });
-
-  document.getElementById('backFromRouteBtn')?.addEventListener('click', () => {
-    hideScreen('screenRoute');
-  });
-
-  document.getElementById('addBtn')?.addEventListener('click', (ev) => { ev.stopPropagation(); toggleQuickMenu(); });
-  // Substituir quickMenu pelo sidebar ao clicar no +
-  document.getElementById('addBtn')?.addEventListener('click', (ev) => {
-    ev.stopPropagation();
-    const sb = document.getElementById('sidebar');
-    if (sb) {
-      sb.classList.toggle('hidden');
-      sb.setAttribute('aria-hidden', sb.classList.contains('hidden') ? 'true' : 'false');
-    }
-  });
-  
-  document.getElementById('quickLoginUser')?.addEventListener('click', () => {
-    hideQuickMenu();
-    showScreen('screenLoginUser');
-  });
-
-  document.getElementById('sbLoginUser')?.addEventListener('click', () => {
-    // Esconde a sidebar ao abrir a tela de login
-    const sb = document.getElementById('sidebar'); 
-    if (sb) { 
-      sb.classList.add('hidden'); 
-      sb.setAttribute('aria-hidden','true'); 
-    }
-    showScreen('screenLoginUser');
-  });
-
-  // Lógica do botão "Entrar" da tela de Login
-  // Alternância entre login de usuário e posto
-  const btnLoginUser = document.getElementById('btnLoginUser');
-  const btnLoginPosto = document.getElementById('btnLoginPosto');
-  const loginUserFields = document.getElementById('loginUserFields');
-  const loginPostoFields = document.getElementById('loginPostoFields');
-  let loginMode = 'user';
-
-  btnLoginUser?.addEventListener('click', () => {
-    loginMode = 'user';
-    btnLoginUser.style.background = '#1976d2';
-    btnLoginUser.style.color = '#fff';
-    btnLoginPosto.style.background = '#f1f5f9';
-    btnLoginPosto.style.color = '#000';
-    loginUserFields.classList.remove('hidden');
-    loginPostoFields.classList.add('hidden');
-  });
-
-  btnLoginPosto?.addEventListener('click', () => {
-    loginMode = 'posto';
-    btnLoginPosto.style.background = '#1976d2';
-    btnLoginPosto.style.color = '#fff';
-    btnLoginUser.style.background = '#f1f5f9';
-    btnLoginUser.style.color = '#000';
-    loginPostoFields.classList.remove('hidden');
-    loginUserFields.classList.add('hidden');
-  });
-
-  // Botão "Entrar"
-  document.getElementById('loginUserScreenBtn')?.addEventListener('click', () => {
-    if (loginMode === 'user') {
-      const email = document.getElementById('loginEmailScreen').value.trim();
-      const pass = document.getElementById('loginPassScreen').value;
-      if (!email || !pass) return showToast('Preencha e-mail e senha.');
-
-      const user = users.find(u => u.email === email && u.pass === pass && u.type === 'user');
-      if (user) {
-        currentUser = user;
-        saveData();
-        updateProfileIcon();
-        hideScreen('screenLoginUser');
-        showToast(`Bem-vindo(a), ${user.name}!`);
-      } else {
-        showToast('E-mail ou senha incorretos.');
-      }
-
-    } else if (loginMode === 'posto') {
-      const name = document.getElementById('loginPostoNameScreen').value.trim().toLowerCase();
-      const cnpj = document.getElementById('loginPostoCnpjScreen').value.trim();
-      if (!name || !cnpj) return showToast('Preencha nome e CNPJ.');
-
-      const normalizeCNPJ = c => c.replace(/\D/g, '');
-      const posto = gasData.find(p => 
-        p.name.toLowerCase() === name &&
-        normalizeCNPJ(p.cnpj) === normalizeCNPJ(cnpj)
-      );
-      
-      if (posto) {
-        currentUser = { id: posto.id, name: posto.name, cnpj: posto.cnpj, type: 'posto', postoId: posto.id };
-        saveData();
-        updateProfileIcon();
-        hideScreen('screenLoginUser');
-        showToast(`Posto ${posto.name} conectado!`);
-      } else {
-        showToast('Nome ou CNPJ incorretos.');
-      }
-    }
-  });
-
-
-  document.addEventListener('click', (ev) => {
-    const qm = document.getElementById('quickMenu');
-    if (!qm) return;
-    if (!qm.contains(ev.target) && ev.target.id !== 'addBtn') hideQuickMenu();
-  });
-  document.getElementById('sidebarClose')?.addEventListener('click', () => {
-    const sb = document.getElementById('sidebar'); if (sb) { sb.classList.add('hidden'); sb.setAttribute('aria-hidden','true'); }
-  });
-  // Ações do sidebar
-  document.getElementById('sbCadastrarPosto')?.addEventListener('click', () => document.getElementById('quickCadastrarPosto')?.click());
-  document.getElementById('sbCadastrarUser')?.addEventListener('click', () => document.getElementById('quickCadastrarUser')?.click());
-  document.getElementById('sbTracarRotas')?.addEventListener('click', () => document.getElementById('quickTraçarRotas')?.click());
-
-  // abrir screen de cadastro de posto (permite Overpass)
-  document.getElementById('quickCadastrarPosto')?.addEventListener('click', () => {
-    hideQuickMenu();
-    // Ao abrir tela de cadastro de posto, habilitamos a busca de postos reais na área atual
-    allowOverpass = true;
-    // busca imediata e também passa a ouvir moveend
-    fetchGasStationsFromOverpass();
-    showScreen('screenRegisterPosto');
-  });
-
-  // cadastrar usuário (sem Overpass)
-  document.getElementById('quickCadastrarUser')?.addEventListener('click', () => {
-    hideQuickMenu();
-    showScreen('screenRegisterUser');
-  });
-
-  // traçar rotas — ativa modo de selecionar 2 pontos
-  document.getElementById('quickTraçarRotas')?.addEventListener('click', () => {
-    hideQuickMenu();
-    selectingWaypoints = true;
-    control.setWaypoints([]);
-    if (_bufferLayer) { try { map.removeLayer(_bufferLayer); } catch(e){} _bufferLayer = null; }
-    routeFoundStations = [];
-    document.getElementById('quickVerRotas')?.classList.add('hidden');
-
-    tempWaypoints = [];
-    tempWayMarkers.forEach(m => { try { map.removeLayer(m); } catch(e){} });
-    tempWayMarkers = [];
-
-    { const el = document.getElementById('quickTraçarRotas'); if (el) el.textContent = 'Selecione 2 pontos no mapa...'; }
-    showToast('Modo traçar rotas ativado. Selecione 2 pontos no mapa.');
-  });
-
-  // profile button
-  document.getElementById('profileBtn')?.addEventListener('click', () => {
-    showScreen('screenProfile');
-    renderProfileScreen();
-  });
-  // fechar painel da rota ao abrir telas
-  document.getElementById('routePanelClose')?.addEventListener('click', () => {
-    const p = document.getElementById('routePanel'); if (p) { p.classList.add('hidden'); p.setAttribute('aria-hidden','true'); }
-  });
-
-  const searchInput = document.getElementById('searchInput');
-  const searchResults = document.getElementById('searchResults');
-
-  if (searchInput && searchResults) {
-    searchInput.addEventListener('input', (e) => {
-      const query = e.target.value.trim().toLowerCase();
-      if (!query) {
-        searchResults.classList.add('hidden');
-        renderAllMarkers('');
-        return;
-      }
-
-      const matches = gasData.filter(p => p.name && p.name.toLowerCase().includes(query));
-      renderAllMarkers(query);
-
-      if (matches.length === 0) {
-        searchResults.innerHTML = `<div>Nenhum posto encontrado</div>`;
-        searchResults.classList.remove('hidden');
-        return;
-      }
-
-      searchResults.innerHTML = matches
-        .map(p => `<div data-id="${p.id}">${escapeHtml(p.name)}</div>`)
-        .join('');
-      searchResults.classList.remove('hidden');
-    });
-
-    // Clique em resultado
-    searchResults.addEventListener('click', (e) => {
-      const div = e.target.closest('div[data-id]');
-      if (!div) return;
-      const id = div.dataset.id;
-      const posto = gasData.find(p => p.id === id);
-      if (!posto || !posto.coords) return;
-
-      map.setView([posto.coords[0], posto.coords[1]], 17);
-
-      // abrir popup do marcador correspondente
-      const markerLayer = gasMarkers.getLayers().find(m => {
-        const ll = m.getLatLng?.();
-        return ll && ll.lat === posto.coords[0] && ll.lng === posto.coords[1];
-      });
-      if (markerLayer) markerLayer.openPopup();
-
-      searchResults.classList.add('hidden');
-      searchInput.value = posto.name;
-    });
-
-  // Ocultar lista ao clicar fora
-  document.addEventListener('click', (e) => {
-    if (!searchResults.contains(e.target) && e.target !== searchInput) {
-      searchResults.classList.add('hidden');
-    }
-  });
-}
-
-
-  // back topbar
-  document.getElementById('topbarBackBtn')?.addEventListener('click', () => {
-    if (currentScreenId) {
-      hideScreen(currentScreenId);
-      currentScreenId = null;
-    }
-    // Limpa rota e buffer ao voltar
-    control.setWaypoints([]);
-    if (_bufferLayer) { try { map.removeLayer(_bufferLayer); } catch(e){} _bufferLayer = null; }
-    routeFoundStations = [];
-    renderAllMarkers();
-  });
-
-  // back buttons internos (podem não existir — usamos ?)
-  document.getElementById('backFromUser')?.addEventListener('click', () => hideScreen('screenRegisterUser'));
-  document.getElementById('backFromPosto')?.addEventListener('click', () => hideScreen('screenRegisterPosto'));
-  document.getElementById('backFromProfile')?.addEventListener('click', () => hideScreen('screenProfile'));
-
-  document.getElementById('nextToDenouncePricesBtn')?.addEventListener('click', () => {
-    const select = document.getElementById('denouncePostoSelect');
-    if (!select.value) return showToast('Selecione um posto primeiro');
-    renderDenounceStep2(select.value);
-  });
-  
-  document.getElementById('cancelDenounceBtn')?.addEventListener('click', () => {
-    hideScreen('screenDenounce');
-  });
-  
-  document.getElementById('backToDenounceSelectBtn')?.addEventListener('click', () => {
-    const fuelDiv = document.getElementById('denounceFuelOptions');
-    if (fuelDiv) fuelDiv.dataset.selectedFuel = '';
-    renderDenounceStep1();
-  });
-  
-  
-  document.getElementById('submitDenounceBtn')?.addEventListener('click', () => {
-    submitDenounce();
-  });
-  
-
-  // salvar usuário
-  document.getElementById('saveUserScreenBtn')?.addEventListener('click', () => {
-    const name = document.getElementById('userNameScreen').value.trim();
-    const email = document.getElementById('userEmailScreen').value.trim();
-    const pass = document.getElementById('userPassScreen').value;
-    if (!name || !email || !pass) { showToast('Preencha todos os campos.'); return; }
-    const id = 'u_' + Date.now();
-    const user = { id, name, email, pass, type: 'user' };
-    users.push(user); currentUser = user; saveData();
-    hideScreen('screenRegisterUser'); updateProfileIcon(); showToast('Usuário cadastrado e logado');
-  });
-
-  // selecionar localização no mapa para posto
-  document.getElementById('selectOnMapScreenBtn')?.addEventListener('click', () => {
-    selectingLocationForPosto = true;
-    returnScreenId = 'screenRegisterPosto';
-    hideScreen('screenRegisterPosto');
-    showToast('Toque no mapa para selecionar a localização do posto');
-  });
-
-  // salvar posto (manual)
-  document.getElementById('savePostoScreenBtn')?.addEventListener('click', () => {
-    const name = document.getElementById('postoNameScreen').value.trim();
-    const cnpj = document.getElementById('postoCnpjScreen').value.trim();
-    if (!name || !cnpj) { showToast('Preencha nome e CNPJ do posto'); return; }
-    if (!tempMarker) { showToast('Selecione a localização no mapa'); return; }
-    const latlng = tempMarker.getLatLng();
-    const id = 'p_' + Date.now();
-    const posto = { id, name, cnpj, coords: [latlng.lat, latlng.lng], prices: { gas: null, etanol: null, diesel: null } };
-    gasData.push(posto);
-    const postoUser = { id: 'u_' + Date.now() + '_p', name, email: null, pass: null, type: 'posto', postoId: id };
-    users.push(postoUser); currentUser = postoUser;
-    if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
-    document.getElementById('locInfoScreen').textContent = 'Nenhum local selecionado';
-    saveData(); hideScreen('screenRegisterPosto'); renderAllMarkers(); updateProfileIcon();
-    showToast('Posto cadastrado e logado como posto');
-  });
-
-  // editar preços (salvar / cancelar)
-  document.getElementById('savePricesBtn')?.addEventListener('click', () => {
-    const gas = parseFloat(document.getElementById('priceGas').value) || null;
-    const etanol = parseFloat(document.getElementById('priceEtanol').value) || null;
-    const diesel = parseFloat(document.getElementById('priceDiesel').value) || null;
-    const editingPostoId = document.getElementById('editPostoName')?.dataset.postoId;
-    const posto = gasData.find(s => s.id === editingPostoId);
-    if (!posto) { showToast('Posto não encontrado'); return; }
-    posto.prices = { gas, etanol, diesel };
-    saveData();
-    renderAllMarkers();
-    hideScreen('screenEditPrices');
-    if (previousScreenId) {
-      showScreen(previousScreenId);
-      previousScreenId = null;
-    }
-    showToast('Preços atualizados');
-  });
-  document.getElementById('cancelPricesBtn')?.addEventListener('click', () => {
-    hideScreen('screenEditPrices');
-    if (previousScreenId) { showScreen(previousScreenId); previousScreenId = null; }
-  });
-
-  // Escape keyboard
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') {
-      if (currentScreenId) hideScreen(currentScreenId);
-      selectingWaypoints = false;
-      hideQuickMenu();
-    }
-  });
-}
-
-/* -------------------------
-   Screens show/hide + Profile render
-   ------------------------- */
-function showScreen(id) {
-  hideQuickMenu();
-  const screen = document.getElementById(id);
-  if (!screen) return;
-  screen.classList.remove('hidden'); screen.setAttribute('aria-hidden','false');
-  currentScreenId = id;
-  setTopbarForMap(false);
-  const addBtn = document.getElementById('addBtn'); const topback = document.getElementById('topbarBackBtn');
-  if (addBtn) addBtn.style.display = 'none';
-  if (topback) topback.classList.remove('hidden');
-}
-function hideScreen(id) {
-  const screen = document.getElementById(id);
-  if (!screen) return;
-  screen.classList.add('hidden'); screen.setAttribute('aria-hidden','true');
-  const anyScreenVisible = !!document.querySelector('.screen:not(.hidden)');
-  if (!anyScreenVisible) {
-    setTopbarForMap(true);
-    const addBtn = document.getElementById('addBtn'); const topback = document.getElementById('topbarBackBtn');
-    if (addBtn) addBtn.style.display = '';
-    if (topback) topback.classList.add('hidden');
-    currentScreenId = null;
-  } else {
-    const vis = document.querySelector('.screen:not(.hidden)');
-    currentScreenId = vis ? vis.id : null;
-  }
 }
 
 function renderProfileScreen() {
-  const content = document.getElementById('profileContentScreen');
-  let html = '';
+    const content = document.getElementById('profileContentScreen');
+    if (!content) return;
+    
+    let html = '';
+    
+    if (!currentUser) {
+        html = `
+            <div style="text-align:center; padding: 20px;">
+                <i class="fa-solid fa-circle-user" style="font-size: 48px; color:#ccc;"></i>
+                <p>Você não está logado.</p>
+                <div class="actions" style="flex-direction: column;">
+                    <button class="big-btn" style="background:#1976d2" onclick="showScreen('screenLoginUser')">Fazer Login</button>
+                    <button class="btn-secondary" onclick="showScreen('screenRegisterUser')">Criar Conta Motorista</button>
+                    <button class="btn-secondary" onclick="showScreen('screenRegisterPosto')">Cadastrar meu Posto</button>
+                </div>
+            </div>
+        `;
+    } else {
+        // Verifica se é Posto ou Motorista
+        const isPosto = currentUser.type === 'posto';
+        const icon = isPosto ? 'fa-gas-pump' : 'fa-user';
+        const subtitle = isPosto ? `CNPJ: ${currentUser.cnpj}` : currentUser.email;
+        const color = isPosto ? '#e65100' : '#1976d2'; // Laranja para posto, Azul para user
+        
+        html = `
+            <div class="profile-card">
+                <div class="profile-avatar" style="color: ${color}; background: ${isPosto ? '#fff3e0' : '#eef2f7'}">
+                    <i class="fa-solid ${icon}"></i>
+                </div>
+                <div class="profile-info">
+                    <b style="font-size:16px;">${currentUser.name}</b><br>
+                    <span class="muted" style="font-size:12px;">${subtitle}</span>
+                    <br>
+                    <span style="font-size:10px; background:${color}; color:white; padding:2px 6px; border-radius:4px;">
+                        ${isPosto ? 'CONTA EMPRESARIAL' : 'MOTORISTA'}
+                    </span>
+                </div>
+            </div>
+            
+            <div class="profile-actions" style="flex-direction: column; margin-top:20px;">
+                ${isPosto ? 
+                    `<button class="big-btn" style="background:#e65100" onclick="promptNewPrice('${currentUser.id}')">
+                        <i class="fa-solid fa-tag"></i> Atualizar Meus Preços
+                     </button>` 
+                    : 
+                    `<button onclick="showToast('Histórico em breve...')">Ver Histórico</button>`
+                }
+                
+                <button class="btn-secondary" onclick="logout()" style="margin-top:10px;">Sair da Conta</button>
+            </div>
+        `;
+    }
+    
+    content.innerHTML = html;
+}
 
-  if (!currentUser) {
-    html = `
-      <p>Você ainda não está logado.</p>
-      <div class="actions">
-        <button type="button" id="gotoRegisterBtn">Cadastrar-se</button>
-      </div>
-    `;
-  } 
-  else if (currentUser.type === 'posto') {
-    html += `
-      <div class="profile-card">
-        <div class="profile-avatar"><i class="fa-solid fa-gas-pump"></i></div>
-        <div class="profile-info">
-          <b>${currentUser.name}</b><br>
-          <span class="muted">CNPJ: ${currentUser.cnpj || '-'}</span>
-        </div>
-      </div>
-      <div class="profile-actions">
-        <button id="editPricesBtn">Editar preços</button>
-        <button id="logoutBtn" class="btn-secondary">Sair</button>
-      </div>
-    `;
+/* ========== FUNÇÕES DE NEGÓCIO ========== */
+function findStationsAlongRoute(routeCoords) {
+  console.log('📐 Calculando postos próximos à rota (raio 50m)...');
+  console.log('Quantidade de pontos na geometria da rota:', routeCoords.length);
 
-    // Mostrar denúncias recebidas
-    const denuncias = JSON.parse(localStorage.getItem('denuncias') || '[]');
-    const minhasDenuncias = denuncias.filter(d => d.postoId === currentUser.id);
-
-    html += `
-      <h3>Denúncias Recebidas</h3>
-      ${
-        minhasDenuncias.length > 0
-          ? `<ul class="station-list">
-              ${minhasDenuncias.map(d => `
-                <li class="route-station-item">
-                  <div class="station-info">
-                    <b>${d.fuel}</b><br>
-                    <span class="muted">Denunciado por: ${d.userEmail}</span><br>
-                    <span class="muted">${d.date}</span>
-                  </div>
-                </li>`).join('')}
-            </ul>`
-          : `<p class="muted">Nenhuma denúncia recebida até agora.</p>`
+  // 1. Normaliza as coordenadas da rota para garantir que são objetos L.LatLng válidos
+  // O Leaflet Routing Machine geralmente retorna objetos, não arrays simples.
+  const routePoints = routeCoords.map(c => {
+      // Se já for um objeto com lat/lng
+      if (c.lat !== undefined && c.lng !== undefined) {
+          return L.latLng(c.lat, c.lng);
       }
-    `;
-  } 
-  else if (currentUser.type === 'user') {
-    html += `
-      <div class="profile-card">
-        <div class="profile-avatar"><i class="fa-solid fa-user"></i></div>
-        <div class="profile-info">
-          <b>${currentUser.name}</b><br>
-          <span class="muted">${currentUser.email}</span>
-        </div>
-      </div>
-      <div class="profile-actions">
-        <button id="denounceBtnScreen">Denunciar posto por preços falsos</button>
-        <button id="logoutBtn" class="btn-secondary">Sair</button>
-      </div>
-    `;
+      // Se for um array [lat, lng]
+      return L.latLng(c[0], c[1]);
+  });
+
+  // 2. Filtra os postos
+  return gasData.filter(station => {
+      if (!station.coords) return false;
+      
+      const stationLoc = L.latLng(station.coords[0], station.coords[1]);
+      let isNear = false;
+
+      // Otimização: Primeiro checa se o posto está muito longe da rota inteira (Bounding Box simples)
+      // para não rodar a matemática pesada desnecessariamente, mas para 50m vamos direto ao ponto.
+
+      // Verifica a distância do posto para CADA segmento da rota
+      for (let i = 0; i < routePoints.length - 1; i++) {
+          const p1 = routePoints[i];
+          const p2 = routePoints[i+1];
+          
+          // Calcula distância geométrica do Ponto até o Segmento de Linha (p1-p2) em metros
+          const dist = getDistanceFromPointToSegment(stationLoc, p1, p2);
+          
+          if (dist <= 50) { // 50 metros
+              // Console log para debug (opcional: verifique o console F12 se não aparecer nada)
+              // console.log(`✅ Posto ${station.name} está a ${dist.toFixed(1)}m da rota.`);
+              isNear = true;
+              break; // Se encontrou um segmento perto, não precisa testar o resto da rota para este posto
+          }
+      }
+      
+      return isNear;
+  });
+}
+
+function calculateBestValueStations() {
+    return gasData.slice(0, 2); // Simplificado para demonstração
+}
+
+function saveUser() {
+    const name = document.getElementById('userNameScreen')?.value;
+    const email = document.getElementById('userEmailScreen')?.value;
+    const password = document.getElementById('userPassScreen')?.value;
+    
+    if (!name || !email || !password) {
+        showToast('❌ Preencha todos os campos');
+        return;
+    }
+    
+    const newUser = {
+        id: 'user_' + Date.now(),
+        name: name,
+        email: email,
+        password: password,
+        type: 'user'
+    };
+    
+    users.push(newUser);
+    saveData();
+    showToast('✅ Usuário cadastrado com sucesso!');
+    hideScreen('screenRegisterUser');
+}
+
+function savePosto() {
+    const name = document.getElementById('postoNameScreen')?.value;
+    const cnpj = document.getElementById('postoCnpjScreen')?.value;
+    // Vamos usar o campo de senha do formulário (precisa existir no HTML)
+    // Se não tiver um input específico, use um prompt provisório ou adicione o input no HTML
+    const password = document.getElementById('postoPassScreen')?.value || prompt("Defina uma senha para este posto:");
+    
+    let coords = null;
+    if (tempMarker) {
+        const latLng = tempMarker.getLatLng();
+        coords = [latLng.lat, latLng.lng];
+    }
+    
+    if (!name || !coords || !password) {
+        showToast('❌ Nome, Localização e Senha são obrigatórios');
+        return;
+    }
+    
+    const newPosto = {
+        id: 'posto_' + Date.now(),
+        name: name,
+        cnpj: cnpj,
+        password: password, // AGORA SALVAMOS A SENHA
+        coords: coords,
+        type: 'posto',      // Identifica que é um posto
+        prices: { gas: null, etanol: null, diesel: null },
+        isVerified: true,   // O dono do posto é verificado por padrão
+        trustScore: 10      // Posto oficial começa com nota máxima
+    };
+    
+    gasData.push(newPosto);
+    saveData();
+    renderAllMarkers();
+    showToast('✅ Posto cadastrado! Agora você pode fazer login.');
+    hideScreen('screenRegisterPosto');
+    
+    if (tempMarker) {
+        map.removeLayer(tempMarker);
+        tempMarker = null;
+    }
+}
+
+function handleLogin() {
+    // Verifica qual formulário está ativo
+    const userFields = document.getElementById('loginUserFields');
+    const isUserForm = !userFields.classList.contains('hidden');
+    
+    let credentials, foundEntity;
+
+    if (isUserForm) {
+        // Login de usuário (motorista)
+        const emailInput = document.getElementById('loginEmailScreen')?.value;
+        const passwordInput = document.getElementById('loginPassScreen')?.value;
+
+        if (!emailInput || !passwordInput) {
+            showToast('❌ Preencha e-mail e senha');
+            return;
+        }
+
+        credentials = { email: emailInput, password: passwordInput };
+        foundEntity = users.find(u => u.email === credentials.email && u.password === credentials.password);
+        
+    } else {
+        // Login de posto
+        const nameInput = document.getElementById('loginPostoNameScreen')?.value;
+        const cnpjInput = document.getElementById('loginPostoCnpjScreen')?.value;
+
+        if (!nameInput || !cnpjInput) {
+            showToast('❌ Preencha nome e CNPJ do posto');
+            return;
+        }
+
+        credentials = { name: nameInput, cnpj: cnpjInput };
+        foundEntity = gasData.find(p => 
+            p.name === credentials.name && p.cnpj === credentials.cnpj
+        );
+    }
+
+    if (foundEntity) {
+        currentUser = foundEntity;
+        
+        // Garante que o tipo está definido corretamente
+        if (!currentUser.type) {
+            currentUser.type = foundEntity.cnpj ? 'posto' : 'user';
+        }
+        
+        saveData();
+        updateProfileIcon();
+        
+        const welcomeName = currentUser.type === 'posto' ? currentUser.name : currentUser.name.split(' ')[0];
+        showToast(`✅ Bem-vindo, ${welcomeName}!`);
+        
+        hideScreen('screenLoginUser');
+        
+        // Se for posto, pergunta se quer editar preços
+        if (currentUser.type === 'posto') {
+            setTimeout(() => {
+                if(confirm("Deseja atualizar os preços do seu posto agora?")) {
+                    promptNewPrice(currentUser.id); 
+                }
+            }, 500);
+        }
+
+    } else {
+        showToast('❌ Credenciais inválidas');
+    }
+}
+function logout() {
+    currentUser = null;
+    saveData();
+    updateProfileIcon();
+    showToast('👋 Você saiu da conta');
+    hideScreen('screenProfile');
+}
+
+function updateProfileIcon() {
+    const profileBtn = document.getElementById('profileBtn');
+    if (profileBtn) {
+        if (currentUser) {
+            profileBtn.innerHTML = '<i class="fa-solid fa-user-check"></i>';
+        } else {
+            profileBtn.innerHTML = '<i class="fa-solid fa-user"></i>';
+        }
+    }
+}
+
+function calculateTrustAndBestValue() {
+    let bestStation = null;
+    let bestScore = -1;
+  
+    gasData.forEach(station => {
+        // FATORES DA NOTA DE CONFIABILIDADE (0-10)
+        let score = 5.0; // Nota base
+        
+        // 1. Posto verificado oficialmente (+3 pontos)
+        if (station.isVerified) score += 3.0;
+        
+        // 2. Histórico de preços estáveis (+1 ponto)
+        if (station.priceHistory && Object.keys(station.priceHistory).length > 5) {
+            score += 1.0;
+        }
+        
+        // 3. Sem pendências de preço (+1 ponto)
+        if (!station.pendingChanges || station.pendingChanges.length === 0) {
+            score += 1.0;
+        }
+        
+        // 4. Preços competitivos (+0.5 ponto se gasolina < R$ 6.00)
+        if (station.prices?.gas && parseFloat(station.prices.gas) < 6.00) {
+            score += 0.5;
+        }
+        
+        // 5. Múltiplos combustíveis com preço (+0.5 ponto)
+        const fuelCount = Object.keys(station.prices || {}).filter(k => station.prices[k]).length;
+        if (fuelCount >= 2) score += 0.5;
+        
+        // Limita a nota máxima
+        station.trustScore = Math.min(10, score).toFixed(1);
+        
+        // Reseta flags anteriores
+        station.isBestValue = false;
+        
+        // CALCULA SCORE PARA MELHOR CUSTO-BENEFÍCIO
+        // Combina preço baixo com alta confiabilidade
+        if (station.prices?.gas && station.trustScore >= 6.0) {
+            const price = parseFloat(station.prices.gas);
+            const trust = parseFloat(station.trustScore);
+            
+            // Fórmula: (10 - preço) * confiabilidade
+            const valueScore = (10 - price) * trust;
+            
+            if (valueScore > bestScore) {
+                bestScore = valueScore;
+                bestStation = station;
+            }
+        }
+    });
+  
+    // Marca o melhor custo-benefício
+    if (bestStation) {
+        bestStation.isBestValue = true;
+        console.log(`🏆 Melhor custo-benefício: ${bestStation.name} (Score: ${bestScore.toFixed(1)})`);
+    }
   }
 
-  content.innerHTML = html;
+// RF01: Usuário sugere um novo preço (Entra como pendente)
+window.promptNewPrice = function(stationId, fuelType = null) {
+    const station = gasData.find(s => s.id === stationId);
+    if (!station) return;
 
-  document.getElementById('editPricesBtn')?.addEventListener('click', () => {
-    if (currentUser && currentUser.type === 'posto' && currentUser.postoId) {
-      // Chama a função que abre a tela de edição
-      openEditPricesForPosto(currentUser.postoId);
-    } else {
-      showToast('Erro: Não foi possível identificar o posto.');
+    // Se não especificou o combustível, pergunta qual
+    if (!fuelType) {
+        const selectedFuel = prompt("Qual combustível?\n1 - Gasolina\n2 - Etanol\n3 - Diesel\n\nDigite 1, 2 ou 3:");
+        if (!selectedFuel) return;
+        
+        switch(selectedFuel.trim()) {
+            case '1': fuelType = 'gas'; break;
+            case '2': fuelType = 'etanol'; break;
+            case '3': fuelType = 'diesel'; break;
+            default: 
+                showToast('❌ Tipo inválido');
+                return;
+        }
     }
-  });
 
-  // Botão sair
-  document.getElementById('logoutBtn')?.addEventListener('click', () => {
-    currentUser = null;
-    localStorage.removeItem('currentUser');
-    showToast('Você saiu da conta');
-    hideScreen('screenProfile');
-  });
+    const currentPrice = station.prices?.[fuelType] || '--';
+    const newPrice = prompt(`Preço atual do ${getFuelName(fuelType)}: R$ ${currentPrice}\n\nNovo preço:`);
+    
+    if (!newPrice || isNaN(parseFloat(newPrice))) {
+        showToast('❌ Preço inválido');
+        return;
+    }
 
-  // Botão de denúncia (abre tela)
-  document.getElementById('denounceBtnScreen')?.addEventListener('click', () => {
-    hideScreen('screenProfile');
+    // Se é o dono do posto, atualiza direto
+    if (currentUser && currentUser.type === 'posto' && currentUser.id === stationId) {
+        if (!station.prices) station.prices = {};
+        station.prices[fuelType] = parseFloat(newPrice).toFixed(2);
+        station.isVerified = true;
+        station.trustScore = 10; // Posto oficial mantém nota máxima
+        saveData();
+        renderAllMarkers();
+        showToast("✅ Preço atualizado com sucesso!");
+        return;
+    }
 
-    openDenounceScreen();
-  });
+    // Usuário comum: cria pendência
+    handlePriceSuggestion(stationId, fuelType, newPrice);
+};
 
-  // Redirecionar para cadastro
-  document.getElementById('gotoRegisterBtn')?.addEventListener('click', () => {
-    hideScreen('screenProfile');
-    showScreen('screenRegisterUser');
-  });
-}  
-
-/* -------------------------
-   Helpers / small utilities
-   ------------------------- */
-function openProfileForPosto(postoId) {
-  showScreen('screenProfile');
-  renderProfileScreen(postoId);
-}
-function openEditPricesForPosto(postoId) {
-  const posto = gasData.find(s => s.id === postoId);
-  if (!posto) return;
-  previousScreenId = currentScreenId || null;
-  const elName = document.getElementById('editPostoName');
-  if (elName) { elName.textContent = posto.name; elName.dataset.postoId = posto.id; }
-  document.getElementById('priceGas').value = posto.prices.gas || '';
-  document.getElementById('priceEtanol').value = posto.prices.etanol || '';
-  document.getElementById('priceDiesel').value = posto.prices.diesel || '';
-  if (currentScreenId === 'screenProfile') hideScreen('screenProfile');
-  showScreen('screenEditPrices');
+// FUNÇÃO AUXILIAR: Nome do combustível
+function getFuelName(fuelType) {
+    const names = {
+        'gas': 'Gasolina',
+        'etanol': 'Etanol', 
+        'diesel': 'Diesel'
+    };
+    return names[fuelType] || fuelType;
 }
 
-function toggleQuickMenu() {
-  const qm = document.getElementById('quickMenu'); if (!qm) return;
-  qm.classList.toggle('hidden'); qm.setAttribute('aria-hidden', qm.classList.contains('hidden') ? 'true' : 'false');
+// NOVA FUNÇÃO: Gerencia sugestões de preço
+function handlePriceSuggestion(stationId, fuelType, newPrice) {
+    const station = gasData.find(s => s.id === stationId);
+    if (!station) return;
+
+    if (!station.pendingChanges) station.pendingChanges = [];
+    
+    // Verifica se já existe pendência para este combustível
+    const existingChangeIndex = station.pendingChanges.findIndex(
+        change => change.type === fuelType
+    );
+
+    if (existingChangeIndex >= 0) {
+        // Adiciona voto à pendência existente
+        const change = station.pendingChanges[existingChangeIndex];
+        if (!change.users.includes(currentUser?.id)) {
+            change.votes += 1;
+            change.users.push(currentUser?.id || 'anonymous');
+            
+            // AUMENTA A CONFIABILIDADE a cada confirmação
+            station.trustScore = Math.min(10, (parseFloat(station.trustScore) || 5) + 0.5);
+            
+            showToast(`👍 Voto adicionado! Confiabilidade: ${station.trustScore}`);
+            
+            // Se atingiu 3 votos, aplica automaticamente
+            if (change.votes >= 3) {
+                applyPriceChange(station, fuelType, change.price);
+                station.pendingChanges.splice(existingChangeIndex, 1);
+                station.isVerified = true;
+                showToast("✅ Preço confirmado pela comunidade!");
+            }
+        } else {
+            showToast("❌ Você já votou neste preço");
+        }
+    } else {
+        // Cria nova pendência
+        station.pendingChanges.push({
+            type: fuelType,
+            price: parseFloat(newPrice).toFixed(2),
+            votes: 1,
+            users: [currentUser?.id || 'anonymous'],
+            timestamp: new Date().toISOString()
+        });
+        
+        station.isVerified = false;
+        showToast("⚠️ Preço sugerido! Aguardando confirmações...");
+    }
+
+    saveData();
+    renderAllMarkers();
 }
-function hideQuickMenu() { const qm = document.getElementById('quickMenu'); if (!qm) return; qm.classList.add('hidden'); qm.setAttribute('aria-hidden','true'); }
 
-function setTopbarForMap(isMapVisible) {
-  const profileBtn = document.getElementById('profileBtn');
-  const searchWrap = document.querySelector('.search-wrap');
-  if (profileBtn) profileBtn.style.display = isMapVisible ? '' : 'none';
-  if (searchWrap) searchWrap.style.display = isMapVisible ? '' : 'none';
+// RF01: Validação Colaborativa (Segundo usuário confirma)
+window.confirmPrice = function(stationId, changeIndex) {
+    const station = gasData.find(s => s.id === stationId);
+    if (!station || !station.pendingChanges || !station.pendingChanges[changeIndex]) return;
+
+    const change = station.pendingChanges[changeIndex];
+    const currentUserId = currentUser?.id || 'anonymous';
+
+    // Verifica se usuário já votou
+    if (change.users.includes(currentUserId)) {
+        showToast("❌ Você já confirmou este preço");
+        return;
+    }
+
+    // Adiciona voto
+    change.votes += 1;
+    change.users.push(currentUserId);
+    
+    // AUMENTA CONFIABILIDADE a cada confirmação
+    station.trustScore = Math.min(10, (parseFloat(station.trustScore) || 5) + 0.5);
+    
+    showToast(`👍 Confirmação adicionada! Confiabilidade: ${station.trustScore}`);
+
+    // Se atingiu 3 votos, aplica a mudança automaticamente
+    if (change.votes >= 3) {
+        applyPriceChange(station, change.type, change.price);
+        station.pendingChanges.splice(changeIndex, 1);
+        station.isVerified = true;
+        showToast("✅ Preço confirmado pela comunidade!");
+    }
+
+    saveData();
+    renderAllMarkers();
+};
+
+// NOVA FUNÇÃO: Aplica mudança de preço
+function applyPriceChange(station, fuelType, price) {
+    if (!station.prices) station.prices = {};
+    station.prices[fuelType] = price;
+    
+    // Bônus de confiabilidade por preço confirmado
+    station.trustScore = Math.min(10, (parseFloat(station.trustScore) || 5) + 1);
 }
 
-function showToast(msg, ms = 2000) { const t = document.getElementById('toast'); if (!t) return; t.textContent = msg; t.classList.remove('hidden'); clearTimeout(t._timeout); t._timeout = setTimeout(()=> t.classList.add('hidden'), ms); }
+/* ========== FUNÇÕES UTILITÁRIAS ========== */
+function showToast(message, duration = 3000) {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+    
+    toast.textContent = message;
+    toast.classList.remove('hidden');
+    
+    setTimeout(() => {
+        toast.classList.add('hidden');
+    }, duration);
+    
+    console.log('💬 Toast:', message);
+}
 
-function updateProfileIcon() { const btn = document.getElementById('profileBtn'); if (!btn) return; btn.innerHTML = currentUser ? '<i class="fa-solid fa-user-check"></i>' : '<i class="fa-solid fa-user"></i>'; saveData(); }
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
 
-function escapeHtml(s) { return String(s || '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch])); }
+function getDistanceFromPointToSegment(p, a, b) {
+  // p, a, b são objetos L.latLng ou {lat, lng}
+  let pLat = p.lat, pLng = p.lng;
+  let aLat = a.lat, aLng = a.lng;
+  let bLat = b.lat, bLng = b.lng;
+
+  // Vetores
+  let x = pLat - aLat;
+  let y = pLng - aLng;
+  let dx = bLat - aLat;
+  let dy = bLng - aLng;
+
+  let dot = x * dx + y * dy;
+  let len_sq = dx * dx + dy * dy;
+  let param = -1;
+
+  if (len_sq !== 0) // Evita divisão por zero
+      param = dot / len_sq;
+
+  let xx, yy;
+
+  if (param < 0) {
+      xx = aLat;
+      yy = aLng;
+  } else if (param > 1) {
+      xx = bLat;
+      yy = bLng;
+  } else {
+      xx = aLat + param * dx;
+      yy = aLng + param * dy;
+  }
+
+  // Usa a função nativa do Leaflet para converter a distância lat/lng em Metros
+  return map.distance(L.latLng(pLat, pLng), L.latLng(xx, yy));
+}
+
+// FUNÇÕES DO MODO MOTORISTA
+function enterDriverMode() {
+    console.log('🚗 Entrando no modo motorista...');
+    
+    if (routeFoundStations.length === 0) {
+        showToast('⚠️ Trace uma rota primeiro para usar o modo motorista');
+        return;
+    }
+    
+    driverMode = true;
+    document.body.classList.add('driver-mode-active');
+    
+    // Esconde elementos da interface
+    const topbar = document.getElementById('topbar');
+    const homeQuick = document.getElementById('homeQuick');
+    const sidebar = document.getElementById('sidebar');
+    
+    if (topbar) topbar.style.display = 'none';
+    if (homeQuick) homeQuick.style.display = 'none';
+    if (sidebar) sidebar.classList.add('hidden');
+    
+    // Reset cooldown de alertas
+    voiceAlertCooldown = {};
+    
+    // Inicializa a síntese de voz
+    if (speechSynthesis) {
+        // Força o carregamento das vozes disponíveis
+        speechSynthesis.getVoices();
+    }
+    
+    // Mensagem de boas-vindas por voz
+    setTimeout(() => {
+        speakAlert("Modo motorista ativado. Você será avisado quando estiver próximo de postos de gasolina.");
+    }, 1000);
+    
+    // Seleciona os 2 melhores postos para mostrar
+    selectDriverStations();
+    
+    // Mostra o painel do modo motorista
+    const driverPanel = document.getElementById('driverModePanel');
+    if (driverPanel) {
+        driverPanel.classList.remove('hidden');
+    }
+    
+    // Ajusta o visual do mapa para modo motorista
+    adjustMapForDriverMode();
+    
+    showToast('🚗 Modo motorista ativado - Alertas de voz ativos!');
+}
+
+function exitDriverModeHandler() {
+    console.log('🚗 Executando saída do modo motorista...');
+    
+    driverMode = false;
+    document.body.classList.remove('driver-mode-active');
+    
+    // Para qualquer alerta de voz em andamento
+    if (speechSynthesis) {
+        speechSynthesis.cancel();
+    }
+    
+    // Esconde o painel do modo motorista
+    const driverPanel = document.getElementById('driverModePanel');
+    if (driverPanel) {
+        driverPanel.classList.add('hidden');
+        console.log('✅ Painel escondido');
+    }
+    
+    // RESTAURA ELEMENTOS DA INTERFACE CORRETAMENTE
+    const topbar = document.getElementById('topbar');
+    const homeQuick = document.getElementById('homeQuick');
+    
+    if (topbar) {
+        topbar.style.display = 'flex';
+        console.log('✅ Topbar restaurada');
+    }
+    
+    if (homeQuick) {
+        homeQuick.style.display = 'block';
+        // CORREÇÃO CRÍTICA: Remove qualquer deslocamento residual
+        homeQuick.style.right = '20px';
+        homeQuick.style.transform = 'none';
+        homeQuick.classList.remove('sidebar-open');
+        console.log('✅ Botões home reposicionados');
+    }
+    
+    // Restaura o mapa
+    restoreMapFromDriverMode();
+    
+    // FORÇA UM REDRAW PARA GARANTIR QUE OS BOTÕES VOLTEM AO LUGAR
+    setTimeout(() => {
+        if (homeQuick) {
+            homeQuick.style.display = 'none';
+            setTimeout(() => {
+                homeQuick.style.display = 'block';
+            }, 10);
+        }
+    }, 100);
+    
+    showToast('👋 Modo motorista desativado');
+}
+function toggleDriverModeHandler() {
+    if (driverMode) {
+        exitDriverMode();
+    } else {
+        enterDriverMode();
+    }
+}
+
+function stopCurrentRoute() {
+    console.log('🛑 Parando rota atual...');
+    
+    // Remove a rota do controle
+    if (control) {
+        control.setWaypoints([]);
+    }
+    
+    // Limpa variáveis
+    routeFoundStations = [];
+    tempWaypoints = [];
+    tempWayMarkers.forEach(marker => {
+        if (marker && map.hasLayer(marker)) {
+            map.removeLayer(marker);
+        }
+    });
+    tempWayMarkers = [];
+    driverStations = [];
+    
+    // Fecha a sidebar
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+        sidebar.classList.add('hidden');
+        adjustHomeButtonsForSidebar(false);
+    }
+    
+    // SAI DO MODO MOTORISTA E RESTAURA BOTÕES
+    if (driverMode) {
+        exitDriverModeHandler();
+    } else {
+        // Se não estava no modo motorista, ainda assim garante que os botões estejam no lugar certo
+        const homeQuick = document.getElementById('homeQuick');
+        if (homeQuick) {
+            homeQuick.style.right = '20px';
+            homeQuick.style.transform = 'none';
+            homeQuick.classList.remove('sidebar-open');
+        }
+    }
+    
+    // Restaura todos os marcadores
+    renderAllMarkers();
+    
+    showToast('🗺️ Rota removida - Você pode traçar uma nova');
+}
+
+function selectDriverStations() {
+    // Seleciona os 2 melhores postos baseado em confiabilidade + preço + distância
+    if (routeFoundStations.length === 0) return;
+    
+    // Ordena por uma combinação de fatores
+    const sortedStations = [...routeFoundStations].sort((a, b) => {
+        const trustA = parseFloat(a.trustScore) || 0;
+        const trustB = parseFloat(b.trustScore) || 0;
+        const priceA = a.prices?.gas ? parseFloat(a.prices.gas) : Infinity;
+        const priceB = b.prices?.gas ? parseFloat(b.prices.gas) : Infinity;
+        
+        // Calcula distância se tiver localização do usuário
+        let distA = Infinity;
+        let distB = Infinity;
+        
+        if (userLocationMarker) {
+            const userLatLng = userLocationMarker.getLatLng();
+            if (a.coords) {
+                distA = map.distance(userLatLng, L.latLng(a.coords[0], a.coords[1]));
+            }
+            if (b.coords) {
+                distB = map.distance(userLatLng, L.latLng(b.coords[0], b.coords[1]));
+            }
+        }
+        
+        // Fórmula de score: (confiabilidade * 2) - (preço * 10) - (distância / 1000)
+        const scoreA = (trustA * 2) - (priceA * 10) - (distA / 1000);
+        const scoreB = (trustB * 2) - (priceB * 10) - (distB / 1000);
+        
+        return scoreB - scoreA; // Maior score primeiro
+    });
+    
+    driverStations = sortedStations.slice(0, 2);
+    updateDriverPanel();
+    
+    // Destaca os postos selecionados no mapa
+    highlightDriverStationsOnMap();
+    
+    console.log('⭐ Postos selecionados para modo motorista:', driverStations.map(s => s.name));
+}
+
+function updateDriverPanel() {
+    const stationCards = document.querySelectorAll('.driver-station-card');
+    
+    driverStations.forEach((station, index) => {
+        if (index < stationCards.length) {
+            const card = stationCards[index];
+            const distance = calculateDistanceToUser(station);
+            
+            card.querySelector('.station-name').textContent = station.name.length > 15 ? 
+                station.name.substring(0, 15) + '...' : station.name;
+            card.querySelector('.station-price').textContent = `R$ ${station.prices?.gas || '--'}`;
+            card.querySelector('.station-trust').textContent = `${station.trustScore || '5.0'}/10`;
+            card.querySelector('.station-distance').textContent = distance ? `${distance} km` : '-- km';
+            
+            // Adiciona destaque visual para o melhor posto
+            if (index === 0 && driverStations.length > 1) {
+                card.style.borderColor = '#f59e0b';
+                card.style.background = 'linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)';
+            }
+            
+            // Adiciona clique para focar no posto
+            card.onclick = () => {
+                if (station.coords) {
+                    map.setView(station.coords, 16);
+                    showToast(`📍 Focado em ${station.name}`);
+                }
+            };
+        }
+    });
+    
+    // Preenche cards vazios se não houver postos suficientes
+    for (let i = driverStations.length; i < stationCards.length; i++) {
+        const card = stationCards[i];
+        card.querySelector('.station-name').textContent = 'Nenhum posto';
+        card.querySelector('.station-price').textContent = 'R$ --';
+        card.querySelector('.station-trust').textContent = '--/10';
+        card.querySelector('.station-distance').textContent = '-- km';
+        card.onclick = null;
+        card.style.borderColor = '#e2e8f0';
+        card.style.background = 'linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)';
+    }
+}
+function calculateDistanceToUser(station) {
+    if (!userLocationMarker || !station.coords) return null;
+    
+    const userLatLng = userLocationMarker.getLatLng();
+    const stationLatLng = L.latLng(station.coords[0], station.coords[1]);
+    const distanceMeters = map.distance(userLatLng, stationLatLng);
+    const distanceKm = (distanceMeters / 1000).toFixed(1);
+    
+    return distanceKm;
+}
+
+function highlightDriverStationsOnMap() {
+    // Remove destaque anterior de todos os marcadores
+    if (gasMarkers) {
+        gasMarkers.clearLayers();
+    }
+    
+    // Adiciona apenas os postos da rota, destacando os do modo motorista
+    routeFoundStations.forEach(station => {
+        const isDriverStation = driverStations.some(ds => ds.id === station.id);
+        
+        const marker = L.circleMarker(station.coords, {
+            radius: isDriverStation ? 16 : 10,
+            color: isDriverStation ? '#f59e0b' : '#388E3C',
+            fillColor: isDriverStation ? '#fbbf24' : '#4CAF50',
+            fillOpacity: 0.9,
+            weight: isDriverStation ? 4 : 2
+        }).addTo(gasMarkers);
+        
+        const popupContent = `
+            <div style="font-weight: bold; margin-bottom: 8px;">${escapeHtml(station.name)}</div>
+            ${isDriverStation ? '<div style="color:#f59e0b; font-weight:bold; font-size:11px;">⭐ MODO MOTORISTA</div>' : ''}
+            <div>Gasolina: R$ ${station.prices?.gas || '--'}</div>
+            <div>Confiabilidade: ${station.trustScore || '5.0'}/10</div>
+        `;
+        marker.bindPopup(popupContent);
+        
+        if (isDriverStation) {
+            marker.openPopup();
+        }
+    });
+}
+
+function adjustMapForDriverMode() {
+    console.log('🗺️ Ajustando mapa para modo motorista...');
+    
+    // Remove controles desnecessários do mapa
+    const zoomControl = document.querySelector('.leaflet-control-zoom');
+    if (zoomControl) {
+        zoomControl.style.display = 'none';
+    }
+    
+    // Ajusta o zoom para mostrar melhor a rota e postos
+    if (routeFoundStations.length > 0 && driverStations.length > 0) {
+        const bounds = new L.LatLngBounds();
+        
+        // Adiciona os postos do modo motorista
+        driverStations.forEach(station => {
+            if (station.coords) {
+                bounds.extend(station.coords);
+            }
+        });
+        
+        // Adiciona a localização do usuário se disponível
+        if (userLocationMarker) {
+            bounds.extend(userLocationMarker.getLatLng());
+        }
+        
+        // Adiciona os waypoints da rota
+        tempWaypoints.forEach(waypoint => {
+            bounds.extend(waypoint);
+        });
+        
+        if (bounds.isValid()) {
+            map.fitBounds(bounds, { 
+                padding: [50, 50],
+                maxZoom: 15
+            });
+        }
+    }
+    
+    // Aumenta ligeiramente o zoom para melhor visualização
+    setTimeout(() => {
+        if (map.getZoom() > 13) {
+            map.setZoom(map.getZoom() - 1);
+        }
+    }, 500);
+}
+
+function restoreMapFromDriverMode() {
+    console.log('🗺️ Restaurando mapa do modo motorista...');
+    
+    // Restaura controles do mapa
+    const zoomControl = document.querySelector('.leaflet-control-zoom');
+    if (zoomControl) {
+        zoomControl.style.display = 'block';
+    }
+    
+    // Restaura todos os marcadores
+    renderAllMarkers();
+}
+
+function updateDriverDistances() {
+    if (!driverMode || driverStations.length === 0) return;
+    
+    let needsUpdate = false;
+    
+    driverStations.forEach(station => {
+        const newDistance = calculateDistanceToUser(station);
+        if (newDistance) {
+            // Atualiza apenas se a distância mudou significativamente
+            const currentDistance = station.currentDistance;
+            if (!currentDistance || Math.abs(currentDistance - newDistance) > 0.1) {
+                station.currentDistance = newDistance;
+                needsUpdate = true;
+            }
+            
+            // Adiciona classe visual quando estiver próximo
+            const card = document.querySelector(`.driver-station-card:nth-child(${driverStations.indexOf(station) + 1})`);
+            if (card) {
+                if (newDistance <= 0.1) { // 100 metros
+                    card.classList.add('nearby');
+                } else {
+                    card.classList.remove('nearby');
+                }
+            }
+        }
+    });
+    
+    if (needsUpdate) {
+        updateDriverPanel();
+    }
+}
+
+function checkProximityAlerts() {
+    if (!driverMode || !userLocationMarker || driverStations.length === 0) return;
+
+    const userCoords = userLocationMarker.getLatLng();
+
+    driverStations.forEach(station => {
+        const stationLatLng = L.latLng(station.coords[0], station.coords[1]);
+        const distance = map.distance(userCoords, stationLatLng);
+
+        // Se já alertou recentemente, ignora
+        if (voiceAlertCooldown[station.id] && (Date.now() - voiceAlertCooldown[station.id]) < 120000) {
+            return;
+        }
+
+        // Limite de distância: 20 metros
+        if (distance <= 20) {
+            speak(`Atenção! Você está a ${Math.round(distance)} metros do posto recomendado: ${station.name}`);
+            voiceAlertCooldown[station.id] = Date.now();
+        }
+    });
+}
+
+function initLocationTracking() {
+    console.log('📍 Inicializando serviço de localização...');
+    
+    // Verifica se há permissão anterior
+    if (localStorage.getItem('locationTracking') === 'true') {
+        setTimeout(() => startLocationTracking(), 1000);
+    }
+}
+
+/* ========== FUNÇÕES DE AVISO POR VOZ ========== */
+function speakAlert(message) {
+    // Verifica se a API de síntese de voz está disponível
+    if (!speechSynthesis) {
+        console.log('❌ API de síntese de voz não disponível');
+        return;
+    }
+    
+    // Cancela qualquer fala anterior para evitar sobreposição
+    speechSynthesis.cancel();
+    
+    try {
+        const utterance = new SpeechSynthesisUtterance(message);
+        
+        // Configurações da voz
+        utterance.rate = 1.0;    // Velocidade
+        utterance.pitch = 1.0;   // Tom
+        utterance.volume = 0.8;  // Volume
+        
+        // Tenta usar voz em português
+        const voices = speechSynthesis.getVoices();
+        const portugueseVoice = voices.find(voice => 
+            voice.lang.includes('pt') || voice.lang.includes('PT')
+        );
+        
+        if (portugueseVoice) {
+            utterance.voice = portugueseVoice;
+        }
+        
+        utterance.onerror = function(event) {
+            console.error('❌ Erro na síntese de voz:', event);
+        };
+        
+        speechSynthesis.speak(utterance);
+        console.log('🗣️ Alerta de voz:', message);
+        
+    } catch (error) {
+        console.error('❌ Erro ao falar:', error);
+        // Fallback: mostrar toast
+        showToast(`🔊 ${message}`);
+    }
+}
+
+function checkProximityAlerts() {
+    if (!driverMode || !userLocationMarker) return;
+    
+    const userLatLng = userLocationMarker.getLatLng();
+    const alertDistance = 20; // metros
+    
+    routeFoundStations.forEach(station => {
+        if (!station.coords) return;
+        
+        const stationLatLng = L.latLng(station.coords[0], station.coords[1]);
+        const distance = map.distance(userLatLng, stationLatLng);
+        
+        // Verifica se está dentro da distância de alerta
+        if (distance <= alertDistance) {
+            // Verifica cooldown (evita alertas repetidos)
+            const now = Date.now();
+            const lastAlert = voiceAlertCooldown[station.id] || 0;
+            const cooldownTime = 30000; // 30 segundos
+            
+            if (now - lastAlert > cooldownTime) {
+                // Atualiza cooldown
+                voiceAlertCooldown[station.id] = now;
+                
+                // Gera alerta de voz
+                const fuelPrice = station.prices?.gas ? `R$ ${station.prices.gas}` : 'preço não informado';
+                const message = `Posto ${station.name} a ${Math.round(distance)} metros. Gasolina: ${fuelPrice}`;
+                
+                speakAlert(message);
+                
+                // Também mostra alerta visual
+                showToast(`📍 ${station.name} - ${Math.round(distance)}m`, 5000);
+            }
+        }
+    });
+}
+
+function speak(text) {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'pt-BR';
+    window.speechSynthesis.speak(utter);
+}

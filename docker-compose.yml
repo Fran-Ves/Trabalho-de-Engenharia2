@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  db:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: Roginha123
+      MYSQL_DATABASE: postosdb
+    volumes:
+      - dbdata:/var/lib/mysql
+      - ./backend/sql:/docker-entrypoint-initdb.d
+    ports:
+      - "3306:3306"
+
+  backend:
+    build: ./backend
+    depends_on:
+      - db
+    environment:
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: Roginha123
+      DB_NAME: postosdb
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  dbdata:

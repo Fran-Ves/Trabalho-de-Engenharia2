@@ -36,12 +36,11 @@ document.addEventListener('DOMContentLoaded', () => {
    Persistência (localStorage)
    ------------------------- */
 function loadData() {
-  try { gasDataLocal = JSON.parse(localStorage.getItem('stations') || '[]'); } catch(e) { gasDataLocal = []; }
+  gasDataLocal = []; // Agora virá do backend
   try { users = JSON.parse(localStorage.getItem('users') || '[]'); } catch(e) { users = []; }
   try { currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch(e) { currentUser = null; }
 }
 function saveData() {
-  localStorage.setItem('stations', JSON.stringify(gasDataLocal));
   localStorage.setItem('users', JSON.stringify(users));
   localStorage.setItem('currentUser', JSON.stringify(currentUser));
 }

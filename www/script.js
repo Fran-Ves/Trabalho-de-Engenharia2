@@ -33,13 +33,18 @@ let voiceAlertCooldown = {};
 let speechSynthesis = window.speechSynthesis;
 
 // INICIALIZAÇÃO PRINCIPAL - APENAS UMA VEZ
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
+
     console.log('🚀 Iniciando aplicação...');
     
     // Inicializações básicas
     loadData();
     setupUI();
     initMap();
+    await loadStationsFromBackend();
+    await loadPricesFromBackend();
+    renderAllMarkers();
+
     
     // Configura eventos
     attachEventListeners();
@@ -790,8 +795,11 @@ function handleLocationSelection(e) {
 }
 
 /* ========== FUNÇÕES DE DADOS ========== */
-function loadData() {
-    try { gasData = JSON.parse(localStorage.getItem('stations') || '[]'); } catch(e) { gasData = []; }
+async function loadData() {
+    
+    /* já carregado no DOMContentLoaded */
+
+    // gasData = await fetchStationsBackend();    
     try { users = JSON.parse(localStorage.getItem('users') || '[]'); } catch(e) { users = []; }
     try { currentUser = JSON.parse(localStorage.getItem('currentUser') || 'null'); } catch(e) { currentUser = null; }
     try { pendingPrices = JSON.parse(localStorage.getItem('pendingPrices') || '{}'); } catch(e) { pendingPrices = {}; }
@@ -806,7 +814,6 @@ function loadData() {
 }
 
 function saveData() {
-    localStorage.setItem('stations', JSON.stringify(gasData));
     localStorage.setItem('users', JSON.stringify(users));
     localStorage.setItem('currentUser', JSON.stringify(currentUser));
     localStorage.setItem('pendingPrices', JSON.stringify(pendingPrices));
@@ -814,31 +821,31 @@ function saveData() {
     localStorage.setItem('priceHistory', JSON.stringify(priceHistory));
 }
 
-function addSampleStations() {
-    // Adiciona alguns postos de exemplo se não houver dados
-    if (gasData.length === 0) {
-        const sampleStations = [
-            {
-                id: 'sample_1',
-                name: 'Posto Shell',
-                coords: [-7.076944, -41.466944],
-                prices: { gas: 5.89, etanol: 4.20, diesel: 4.95 }
-            },
-            {
-                id: 'sample_2', 
-                name: 'Posto Ipiranga',
-                coords: [-7.080, -41.470],
-                prices: { gas: 5.75, etanol: 4.15, diesel: 4.85 }
-            }
-        ];
+// function addSampleStations() {
+//     // Adiciona alguns postos de exemplo se não houver dados
+//     if (gasData.length === 0) {
+//         const sampleStations = [
+//             {
+//                 id: 'sample_1',
+//                 name: 'Posto Shell',
+//                 coords: [-7.076944, -41.466944],
+//                 prices: { gas: 5.89, etanol: 4.20, diesel: 4.95 }
+//             },
+//             {
+//                 id: 'sample_2', 
+//                 name: 'Posto Ipiranga',
+//                 coords: [-7.080, -41.470],
+//                 prices: { gas: 5.75, etanol: 4.15, diesel: 4.85 }
+//             }
+//         ];
         
-        gasData.push(...sampleStations);
-        saveData();
-        renderAllMarkers();
+//         gasData.push(...sampleStations);
+//         saveData();
+//         renderAllMarkers();
         
-        console.log('📝 Postos de exemplo adicionados');
-    }
-}
+//         console.log('📝 Postos de exemplo adicionados');
+//     }
+// }
 
 /* ========== FUNÇÕES DE RENDERIZAÇÃO ========== */
 function renderAllMarkers() {
@@ -1153,7 +1160,7 @@ function calculateBestValueStations() {
     return gasData.slice(0, 2); // Simplificado para demonstração
 }
 
-function saveUser() {
+async function saveUser() {
     const name = document.getElementById('userNameScreen')?.value;
     const email = document.getElementById('userEmailScreen')?.value;
     const password = document.getElementById('userPassScreen')?.value;
@@ -1171,13 +1178,17 @@ function saveUser() {
         type: 'user'
     };
     
-    users.push(newUser);
-    saveData();
+    await fetch("http://localhost:3000/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(newUser)
+    });
+
     showToast('✅ Usuário cadastrado com sucesso!');
     hideScreen('screenRegisterUser');
 }
 
-function savePosto() {
+async function savePosto() {
     const name = document.getElementById('postoNameScreen')?.value;
     const cnpj = document.getElementById('postoCnpjScreen')?.value;
     // Vamos usar o campo de senha do formulário (precisa existir no HTML)
@@ -1207,8 +1218,13 @@ function savePosto() {
         trustScore: 10      // Posto oficial começa com nota máxima
     };
     
-    gasData.push(newPosto);
-    saveData();
+    await createStationBackend(newPosto);
+    await fetch("http://localhost:3000/api/stations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newPosto)
+    });
+    gasData = await fetchStationsBackend();
     renderAllMarkers();
     showToast('✅ Posto cadastrado! Agora você pode fazer login.');
     hideScreen('screenRegisterPosto');
@@ -1219,7 +1235,7 @@ function savePosto() {
     }
 }
 
-function handleLogin() {
+async function handleLogin() {
     // Verifica qual formulário está ativo
     const userFields = document.getElementById('loginUserFields');
     const isUserForm = !userFields.classList.contains('hidden');
@@ -1237,7 +1253,13 @@ function handleLogin() {
         }
 
         credentials = { email: emailInput, password: passwordInput };
-        foundEntity = users.find(u => u.email === credentials.email && u.password === credentials.password);
+        const res = await fetch("http://localhost:3000/api/login/user", { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(credentials)
+        });
+        const result = await res.json();
+        foundEntity = result.success ? result.user : null;
         
     } else {
         // Login de posto
@@ -1250,9 +1272,13 @@ function handleLogin() {
         }
 
         credentials = { name: nameInput, cnpj: cnpjInput };
-        foundEntity = gasData.find(p => 
-            p.name === credentials.name && p.cnpj === credentials.cnpj
-        );
+        const res = await fetch("http://localhost:3000/api/login/posto", { 
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(credentials)
+        });
+        const result = await res.json();
+        foundEntity = result.success ? result.posto : null;
     }
 
     if (foundEntity) {
@@ -1363,7 +1389,7 @@ function calculateTrustAndBestValue() {
   }
 
 // RF01: Usuário sugere um novo preço (Entra como pendente)
-window.promptNewPrice = function(stationId, fuelType = null) {
+window.promptNewPrice = async function(stationId, fuelType = null) {
     const station = gasData.find(s => s.id === stationId);
     if (!station) return;
 
@@ -1393,6 +1419,7 @@ window.promptNewPrice = function(stationId, fuelType = null) {
     // Se é o dono do posto, atualiza direto
     if (currentUser && currentUser.type === 'posto' && currentUser.id === stationId) {
         if (!station.prices) station.prices = {};
+        await updatePriceBackend(station.id, { gas, etanol, diesel });
         station.prices[fuelType] = parseFloat(newPrice).toFixed(2);
         station.isVerified = true;
         station.trustScore = 10; // Posto oficial mantém nota máxima

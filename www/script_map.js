@@ -24,13 +24,15 @@ let routeControl = null;
 let fetchTimer = null;
 let overpassDebounceTimer = null;
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   loadData();
   initMap();
   setupUI();
+  await loadStationsFromBackend();
   renderAllMarkers();
   updateProfileIcon();
 });
+
 
 /* -------------------------
    Persistência (localStorage)
@@ -101,6 +103,57 @@ function initMap() {
 /* -------------------------
    Fetch Overpass (postos OSM)
    ------------------------- */
+
+/* -------------------------
+   BACKEND API (stations + prices)
+   ------------------------- */
+
+const API_BASE = "http://localhost:3000/api";
+
+/* Buscar postos do backend */
+async function fetchStationsBackend() {
+  const res = await fetch(`${API_BASE}/stations`);
+  return await res.json();
+}
+
+/* Criar posto */
+async function createStationBackend(data) {
+  const res = await fetch(`${API_BASE}/stations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
+  return await res.json();
+}
+
+/* Atualizar preços */
+async function updatePriceBackend(stationId, prices) {
+  const promises = [];
+
+  if (prices.gas !== null)
+    promises.push(fetch(`${API_BASE}/prices`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ station_id: stationId, fuel_type: "gas", price: prices.gas })
+    }));
+
+  if (prices.etanol !== null)
+    promises.push(fetch(`${API_BASE}/prices`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ station_id: stationId, fuel_type: "etanol", price: prices.etanol })
+    }));
+
+  if (prices.diesel !== null)
+    promises.push(fetch(`${API_BASE}/prices`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ station_id: stationId, fuel_type: "diesel", price: prices.diesel })
+    }));
+
+  await Promise.all(promises);
+}
+
 async function fetchGasStationsOverpass() {
   // Bbox no formato sul, oeste, norte, leste
   try {
@@ -138,6 +191,23 @@ async function fetchGasStationsOverpass() {
 /* -------------------------
    Render marcadores (local + remote)
    ------------------------- */
+
+async function loadStationsFromBackend() {
+  try {
+    const stations = await fetchStationsBackend();
+    gasDataLocal = stations.map(s => ({
+      id: s.id.toString(),
+      name: s.name,
+      cnpj: s.cnpj || "",
+      coords: [s.latitude, s.longitude],
+      prices: {},     // preços serão carregados no script.js
+      editable: true
+    }));
+  } catch (err) {
+    console.error("Erro ao carregar postos do backend:", err);
+  }
+}
+
 function renderAllMarkers(filter = '') {
   gasMarkers.clearLayers();
   const q = (filter || '').trim().toLowerCase();
@@ -258,36 +328,53 @@ function setupUI() {
   });
 
   // save posto (screen)
-  document.getElementById('savePostoScreenBtn')?.addEventListener('click', () => {
-    const name = document.getElementById('postoNameScreen').value.trim();
-    const cnpj = document.getElementById('postoCnpjScreen').value.trim();
-    if (!name || !cnpj) { showToast('Preencha nome e CNPJ do posto'); return; }
-    if (!tempMarker) { showToast('Selecione a localização no mapa'); return; }
-    const latlng = tempMarker.getLatLng();
-    const id = 'p_' + Date.now();
-    const posto = { id, name, cnpj, coords: [latlng.lat, latlng.lng], prices: { gas: null, etanol: null, diesel: null } };
-    gasDataLocal.push(posto);
+  document.getElementById('savePostoScreenBtn')?.addEventListener('click', async () => {
+  const name = document.getElementById('postoNameScreen').value.trim();
+  const cnpj = document.getElementById('postoCnpjScreen').value.trim();
+  if (!name || !cnpj) { showToast('Preencha nome e CNPJ do posto'); return; }
+  if (!tempMarker) { showToast('Selecione a localização no mapa'); return; }
 
-    // criar conta "posto" simples e logar como posto
-    const postoUser = { id: 'u_' + Date.now() + '_p', name, email: null, pass: null, type: 'posto', postoId: id };
-    users.push(postoUser); currentUser = postoUser;
+  const latlng = tempMarker.getLatLng();
 
-    if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
-    document.getElementById('locInfoScreen').textContent = 'Nenhum local selecionado';
-    saveData(); hideScreen('screenRegisterPosto'); renderAllMarkers(); updateProfileIcon();
-    showToast('Posto cadastrado e logado como posto');
+  // Salvar no backend
+  const novoPosto = await createStationBackend({
+    name,
+    address: "",
+    latitude: latlng.lat,
+    longitude: latlng.lng
   });
 
+  // Adicionar no array local
+  gasDataLocal.push({
+    id: novoPosto.id.toString(),
+    name,
+    cnpj,
+    coords: [latlng.lat, latlng.lng],
+    prices: {}
+  });
+
+  // Reset UI
+  if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
+  document.getElementById('locInfoScreen').textContent = 'Nenhum local selecionado';
+  hideScreen('screenRegisterPosto');
+  renderAllMarkers();
+  showToast('Posto cadastrado com sucesso!');
+});
+
+
   // save prices (screen)
-  document.getElementById('savePricesBtn')?.addEventListener('click', () => {
+  document.getElementById('savePricesBtn')?.addEventListener('click', async() => {
     const gas = parseFloat(document.getElementById('priceGas').value) || null;
     const etanol = parseFloat(document.getElementById('priceEtanol').value) || null;
     const diesel = parseFloat(document.getElementById('priceDiesel').value) || null;
     const editingPostoId = document.getElementById('editPostoName').dataset.postoId;
     const posto = gasDataLocal.find(s => s.id === editingPostoId);
+    
     if (!posto) { showToast('Posto não encontrado (somente postos cadastrados localmente podem ser editados).'); return; }
+    
+    await updatePriceBackend(posto.id, { gas, etanol, diesel });
+
     posto.prices = { gas, etanol, diesel };
-    saveData();
     renderAllMarkers();
     hideScreen('screenEditPrices');
     if (previousScreenId) {

@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <title>Mapa de Postos — App</title>
+
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+  <!-- Font Awesome (ícones) -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+  <!-- Manifest (opcional PWA) -->
+  <link rel="manifest" href="manifest.json">
+
+  <!-- App styles -->
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Barra superior fixa: botão voltar (oculto) | perfil | busca | cadastrar -->
+  <header id="topbar">
+    <button id="topbarBackBtn" class="icon-btn hidden" title="Voltar">
+        <i class="fa-solid fa-arrow-left"></i>
+    </button>
+    <button id="locationBtn" class="icon-btn" title="Minha Localização">
+        <i class="fa-solid fa-location-crosshairs"></i>
+    </button>
+    <button id="profileBtn" class="icon-btn" title="Perfil">
+        <i class="fa-solid fa-user"></i>
+    </button>
+    <div class="search-wrap">
+        <input id="searchInput" type="search" placeholder="Buscar posto por nome..." />
+    </div>
+    <button id="addBtn" class="icon-btn" title="Cadastrar">
+        <i class="fa-solid fa-plus"></i>
+    </button>
+</header>
+
+	  <!-- QUICK MENU (canto superior direito) -->
+	  <section id="minimalRecommendations" class="minimal-recommendations hidden">
+	    <div class="recommendation-card">
+	      <i class="fa-solid fa-triangle-exclamation"></i>
+	      <p>Nenhuma rota traçada ou posto recomendado próximo.</p>
+	    </div>
+	  </section>
+	  <!-- HOME QUICK MENU (botões grandes) -->
+	  <section id="homeQuick" class="home-quick">
+      <div class="home-buttons">
+        <button id="homeBuscar" class="big-btn">Buscar Posto</button>
+        <button id="sbTracarRotas" class="quick-item">
+            <i class="fa-solid fa-route"></i> Traçar nova rota
+        </button>
+        <button id="homeCadastrar" class="big-btn">Cadastrar</button>
+        <button id="homeMotorista" class="big-btn btn-motorista">Modo Motorista</button>
+      </div>
+    </section>
+
+  <!-- Main: mapa (tela principal) -->
+  <main id="main">
+    <div id="map" role="application" aria-label="Mapa de postos"></div>
+    <!-- Sidebar lateral: ações e informações da rota -->
+    <aside id="sidebar" class="sidebar hidden" aria-hidden="true">
+      <div class="sidebar-header">
+        <div class="sidebar-title">Postos na Rota</div>
+        <button id="sidebarClose" class="icon-btn" title="Fechar">
+          <i class="fa-solid fa-xmark" style="color:#0b2540"></i>
+        </button>
+      </div>
+      
+      <div class="sidebar-section">
+        <!-- Controles de ordenação -->
+        <div class="sort-controls">
+          <button id="sortByPrice" class="sort-btn active">
+            <i class="fa-solid fa-dollar-sign"></i> Por Preço
+          </button>
+          <button id="sortByTrust" class="sort-btn">
+            <i class="fa-solid fa-shield-halved"></i> Por Confiança
+          </button>
+        </div>
+        
+        <!-- Informações da rota -->
+        <div id="routeInfoCompact" class="route-info-compact">Nenhuma rota traçada</div>
+        
+        <!-- Lista de postos -->
+        <ul id="routeSidebarList" class="route-panel-list"></ul>
+      </div>
+      
+      <div class="sidebar-section">
+        <button id="sbCadastrarPosto" class="quick-item">
+          <i class="fa-solid fa-gas-pump"></i> Cadastrar Posto
+        </button>
+        <button id="sbTracarRotas" class="quick-item">
+          <i class="fa-solid fa-route"></i> Traçar nova rota
+        </button>
+      </div>
+    </aside>
+  </main>
+
+  <!-- TELA: Cadastro Usuário (full screen) -->
+  <section id="screenRegisterUser" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Cadastrar Usuário</h2>
+      <form id="formUserScreen" class="form-screen">
+        <label>Nome</label>
+        <input id="userNameScreen" type="text" placeholder="Seu nome" />
+        <label>E-mail</label>
+        <input id="userEmailScreen" type="email" placeholder="exemplo@dominio.com" />
+        <label>Senha</label>
+        <input id="userPassScreen" type="password" placeholder="senha" />
+        <div class="actions">
+          <button type="button" id="saveUserScreenBtn">Salvar cadastro</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- TELA: Cadastro Posto (full screen) -->
+  <section id="screenRegisterPosto" class="screen hidden" aria-hidden="true">
+      <div class="screen-inner">
+          <h2>Cadastrar Posto</h2>
+          <form id="formPostoScreen" class="form-screen">
+              <label>Nome do Posto</label>
+              <input id="postoNameScreen" type="text" placeholder="Nome do posto" />
+              <label>CNPJ</label>
+              <input id="postoCnpjScreen" type="text" placeholder="00.000.000/0000-00" />
+              <!-- ADICIONE ESTE CAMPO DE SENHA -->
+              <label>Senha</label>
+              <input id="postoPassScreen" type="password" placeholder="Defina uma senha" />
+              <label>Localização</label>
+              <div class="loc-row">
+                  <button type="button" id="selectOnMapScreenBtn">Selecionar no mapa</button>
+                  <span id="locInfoScreen" class="muted">Nenhum local selecionado</span>
+              </div>
+              <div class="actions">
+                  <button type="button" id="savePostoScreenBtn">Salvar cadastro</button>
+              </div>
+          </form>
+      </div>
+  </section>
+
+  <!-- TELA: Denúncia de preços falsos -->
+  <section id="screenDenounce" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Denunciar Posto</h2>
+      <div id="denounceStep1">
+        <label for="denouncePostoSelect">Selecione o posto</label>
+        <select id="denouncePostoSelect">
+          <option value="">-- Escolha um posto --</option>
+        </select>
+        <div class="actions">
+          <button type="button" id="nextToDenouncePricesBtn">Próximo</button>
+          <button type="button" id="cancelDenounceBtn" class="btn-secondary">Cancelar</button>
+        </div>
+      </div>
+
+      <div id="denounceStep2" class="hidden">
+        <h3 id="denouncePostoName"></h3>
+        <p class="muted">Selecione o combustível com preço incorreto:</p>
+        <div id="denounceFuelOptions"></div>
+        <div class="actions">
+          <button type="button" id="submitDenounceBtn">Enviar denúncia</button>
+          <button type="button" id="backToDenounceSelectBtn" class="btn-secondary">Voltar</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- TELA: Perfil (full screen) -->
+  <section id="screenProfile" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Perfil</h2>
+      <div id="profileContentScreen"></div>
+    </div>
+  </section>
+
+  <!-- TELA: Login (full screen) -->
+
+  <section id="screenLoginUser" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Entrar (Login)</h2>
+      <form id="formLoginScreen" class="form-screen">
+        <div class="choice-row">
+          <button type="button" id="btnLoginUser" class="choice">Usuário</button>
+          <button type="button" id="btnLoginPosto" class="choice">Posto</button>
+        </div>
+      
+        <div id="loginUserFields">
+          <label>E-mail</label>
+          <input id="loginEmailScreen" type="email" placeholder="exemplo@dominio.com" />
+          <label>Senha</label>
+          <input id="loginPassScreen" type="password" placeholder="senha" />
+        </div>
+      
+        <div id="loginPostoFields" class="hidden">
+          <label>Nome do Posto</label>
+          <input id="loginPostoNameScreen" type="text" placeholder="Nome do posto" />
+          <label>CNPJ</label>
+          <input id="loginPostoCnpjScreen" type="text" placeholder="00.000.000/0000-00" />
+        </div>
+      
+        <div class="actions">
+          <button type="button" id="loginUserScreenBtn">Entrar</button>
+        </div>
+      </form>      
+    </div>
+  </section>
+
+  <!-- TELA: Rotas (full screen) -->
+  <section id="screenRoute" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Postos na Rota</h2>
+      <p class="muted">Postos encontrados em um raio de 200m da rota, ordenados por preço (Gasolina).</p>
+      <ul id="routeStationsList" class="station-list">
+        <!-- Lista de postos será injetada aqui -->
+      </ul>
+      <div class="actions">
+        <button type="button" id="backFromRouteBtn" class="btn-secondary">Voltar ao Mapa</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- TELA: Edição de Preços (full screen) -->
+  <section id="screenEditPrices" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <h2>Editar preços — <span id="editPostoName"></span></h2>
+      <form id="pricesFormScreen" class="form-screen">
+        <label>Gasolina (R$)</label>
+        <input id="priceGas" type="number" step="0.01" />
+        <label>Etanol (R$)</label>
+        <input id="priceEtanol" type="number" step="0.01" />
+        <label>Diesel (R$)</label>
+        <input id="priceDiesel" type="number" step="0.01" />
+        <div class="actions">
+          <button type="button" id="savePricesBtn">Salvar alterações</button>
+          <button type="button" id="cancelPricesBtn" class="btn-secondary">Cancelar</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+
+  <!-- TELA: Modo motorista -->
+  <section id="driverModePanel" class="driver-mode-panel hidden">
+    <div class="driver-header">
+      <h3>Modo Motorista</h3>
+      <button id="exitDriverMode" class="icon-btn">
+        <i class="fa-solid fa-xmark"></i>
+      </button>
+    </div>
+    
+    <div class="driver-stations">
+      <div class="driver-station-card">
+        <div class="station-info">
+          <div class="station-name">Posto 1</div>
+          <div class="station-distance">-- km</div>
+        </div>
+        <div class="station-price">R$ --</div>
+        <div class="station-trust">--/10</div>
+      </div>
+      
+      <div class="driver-station-card">
+        <div class="station-info">
+          <div class="station-name">Posto 2</div>
+          <div class="station-distance">-- km</div>
+        </div>
+        <div class="station-price">R$ --</div>
+        <div class="station-trust">--/10</div>
+      </div>
+    </div>
+    
+    <div class="driver-controls">
+      <button id="stopRouteBtn" class="driver-btn stop-route">
+        <i class="fa-solid fa-stop"></i> Parar Rota
+      </button>
+      <button id="toggleDriverMode" class="driver-btn toggle-mode">
+        <i class="fa-solid fa-car-side"></i> Sair do Modo
+      </button>
+    </div>
+  </section>
+  <div id="quickMenu" class="hidden"></div>
+
+  <button id="openDenounceBtn" class="hidden"></button>
+  <button id="confirmPricesBtn" class="hidden"></button>
+  <button id="editPricesBtn" class="hidden"></button>
+  <button id="returnToMapBtn" class="hidden"></button>
+
+  <!-- Botão de traçar rotas usado no modo rápido -->
+  <button id="quickTraçarRotas" class="hidden"></button>
+
+  <button id="sidebarOpen" class="icon-btn">
+    <i class="fa-solid fa-bars"></i>
+  </button>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- Scripts: Leaflet e dependências -->
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+  <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+  <!-- App script (carrega por último após dependências) -->
+  <!-- utilidades e dados (globais) -->
+  <script src="js/data.js"></script>
+  <script src="js/utils.js"></script>
+  <script src="js/route.js"></script>  <!-- Carregar ANTES do map.js -->
+  <script src="js/map.js"></script>
+  <script src="js/stations.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/drivermode.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+
+
+
+  <!-- SW -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('service-worker.js').catch(()=>{/* ignore */});
+    }
+  </script>
+</body>
+</html>

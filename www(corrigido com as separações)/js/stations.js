@@ -115,43 +115,62 @@ window.promptNewPrice = function(stationId, fuelType = null) {
     handlePriceSuggestion(stationId, fuelType, parseFloat(newPrice).toFixed(2));
 };
 
-window.confirmPrice = function(stationId, changeIndex) {
-    const station = gasData.find(s => s.id === stationId);
-    if (!station || !station.pendingChanges || !station.pendingChanges[changeIndex]) return;
-    const change = station.pendingChanges[changeIndex];
-    const currentUserId = currentUser?.id || `anon_${getAnonId()}`;
+async function confirmPrice(stationId, changeIndex) {
+  const station = gasData.find(s => s.id === stationId);
+  if (!station || !station.pendingChanges || !station.pendingChanges[changeIndex]) return;
+  
+  const change = station.pendingChanges[changeIndex];
+  const currentUserId = currentUser?.id || `anon_${getAnonId()}`;
 
-    if (change.users.includes(currentUserId)) {
-        showToast("❌ Você já confirmou este preço");
-        return;
-    }
+  if (change.users.includes(currentUserId)) {
+    showToast("❌ Você já confirmou este preço");
+    return;
+  }
 
-    change.votes += 1;
-    change.users.push(currentUserId);
-    station.trustScore = Math.min(10, (parseFloat(station.trustScore) || 5) + 0.5);
-    showToast(`👍 Confirmação adicionada! Confiabilidade: ${station.trustScore}`);
+  change.votes += 1;
+  change.users.push(currentUserId);
+  station.trustScore = Math.min(10, (parseFloat(station.trustScore) || 5) + 0.5);
+  showToast(`👍 Confirmação adicionada! Confiabilidade: ${station.trustScore}`);
 
-    if (change.votes >= 3) {
-        applyPriceChange(station, change.type, change.price);
-        station.pendingChanges.splice(changeIndex, 1);
-        station.isVerified = true;
-        showToast("✅ Preço confirmado pela comunidade!");
-    }
+  if (change.votes >= 3) {
+    applyPriceChange(station, change.type, change.price);
+    station.pendingChanges.splice(changeIndex, 1);
+    station.isVerified = true;
+    showToast("✅ Preço confirmado pela comunidade!");
+  }
 
-    saveData();
-    renderAllMarkers();
-};
+  // Atualizar no IndexedDB
+  if (typeof dbPut === 'function') {
+    await dbPut('stations', station);
+  }
+  
+  await saveData();
+  renderAllMarkers();
+}
 
-function handlePriceSuggestion(stationId, fuelType, price) {
-    const station = gasData.find(s => s.id === stationId);
-    if (!station) return;
-    if (!station.pendingChanges) station.pendingChanges = [];
+async function handlePriceSuggestion(stationId, fuelType, price) {
+  const station = gasData.find(s => s.id === stationId);
+  if (!station) return;
+  
+  if (!station.pendingChanges) station.pendingChanges = [];
 
-    const change = { type: fuelType, price: parseFloat(price).toFixed(2), votes: 1, users: [currentUser?.id || getAnonId()] };
-    station.pendingChanges.unshift(change);
-    saveData();
-    renderAllMarkers();
-    showToast('✅ Sugestão enviada — aguarde confirmações da comunidade');
+  const change = { 
+    type: fuelType, 
+    price: parseFloat(price).toFixed(2), 
+    votes: 1, 
+    users: [currentUser?.id || getAnonId()] 
+  };
+  
+  station.pendingChanges.unshift(change);
+  
+  // Atualizar no IndexedDB se disponível
+  if (typeof dbPut === 'function') {
+    await dbPut('stations', station);
+  }
+  
+  await saveData();
+  renderAllMarkers();
+  showToast('✅ Sugestão enviada — aguarde confirmações da comunidade');
 }
 
 function applyPriceChange(station, fuelType, price) {

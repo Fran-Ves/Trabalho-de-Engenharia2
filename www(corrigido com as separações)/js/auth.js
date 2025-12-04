@@ -1,53 +1,101 @@
 /* auth.js — registro, login e controle de sessão */
-function saveUser() {
-    const name = document.getElementById('userNameScreen')?.value;
-    const email = document.getElementById('userEmailScreen')?.value;
-    const password = document.getElementById('userPassScreen')?.value;
+async function saveUser() {
+  const name = document.getElementById('userNameScreen')?.value;
+  const email = document.getElementById('userEmailScreen')?.value;
+  const password = document.getElementById('userPassScreen')?.value;
 
-    if (!name || !email || !password) {
-        showToast('❌ Preencha todos os campos');
-        return;
-    }
+  if (!name || !email || !password) {
+    showToast('❌ Preencha todos os campos');
+    return;
+  }
 
-    const newUser = { id: 'user_' + Date.now(), name, email, password, type: 'user' };
-    users.push(newUser);
-    saveData();
-    showToast('✅ Usuário cadastrado com sucesso!');
-    hideScreen('screenRegisterUser');
+  const newUser = { 
+    id: 'user_' + Date.now(), 
+    name, 
+    email, 
+    password, 
+    type: 'user' 
+  };
+  
+  // Adicionar ao array local
+  users.push(newUser);
+  
+  // Adicionar ao IndexedDB se disponível
+  if (typeof dbPut === 'function') {
+    await dbPut('users', newUser);
+  }
+  
+  await saveData();
+  showToast('✅ Usuário cadastrado com sucesso!');
+  hideScreen('screenRegisterUser');
 }
 
-function savePosto() {
+async function savePosto() {
     const name = document.getElementById('postoNameScreen')?.value;
     const cnpj = document.getElementById('postoCnpjScreen')?.value;
-    const password = document.getElementById('postoPassScreen')?.value || prompt("Defina uma senha para este posto:");
-
+    const password = document.getElementById('postoPassScreen')?.value;
+    
     let coords = null;
-    if (tempMarker) {
+    
+    // Usar a localização selecionada
+    if (selectedLocationForPosto) {
+        coords = [selectedLocationForPosto.lat, selectedLocationForPosto.lng];
+    } else if (tempMarker) {
         const latLng = tempMarker.getLatLng();
         coords = [latLng.lat, latLng.lng];
     }
-
+    
     if (!name || !coords || !password) {
         showToast('❌ Nome, Localização e Senha são obrigatórios');
         return;
     }
-
+    
     const newPosto = {
         id: 'posto_' + Date.now(),
-        name, cnpj, password,
-        coords, type: 'posto',
+        name, 
+        cnpj, 
+        password,
+        coords, 
+        type: 'posto',
         prices: { gas: null, etanol: null, diesel: null },
         isVerified: true,
-        trustScore: 10
+        trustScore: 10,
+        pendingChanges: []
     };
-
+    
+    // Adicionar ao array local
     gasData.push(newPosto);
-    saveData();
+    
+    // Adicionar ao IndexedDB se disponível
+    if (typeof dbPut === 'function') {
+        try {
+            await dbPut('stations', newPosto);
+        } catch (error) {
+            console.error('❌ Erro ao salvar no IndexedDB:', error);
+        }
+    }
+    
+    await saveData();
     renderAllMarkers();
     showToast('✅ Posto cadastrado! Agora você pode fazer login.');
     hideScreen('screenRegisterPosto');
-
-    if (tempMarker) { map.removeLayer(tempMarker); tempMarker = null; }
+    
+    // Limpar variáveis de seleção
+    selectingLocationForPosto = false;
+    selectedLocationForPosto = null;
+    
+    if (tempMarker) { 
+        map.removeLayer(tempMarker); 
+        tempMarker = null; 
+    }
+    
+    // Limpar campos do formulário
+    document.getElementById('postoNameScreen').value = '';
+    document.getElementById('postoCnpjScreen').value = '';
+    document.getElementById('postoPassScreen').value = '';
+    document.getElementById('locInfoScreen').textContent = 'Nenhum local selecionado';
+    document.getElementById('locInfoScreen').style.color = '';
+    document.getElementById('locInfoScreen').style.fontWeight = '';
 }
 
 function handleLogin() {

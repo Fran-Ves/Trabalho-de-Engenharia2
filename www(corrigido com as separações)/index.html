@@ -50,12 +50,22 @@
 	  <!-- HOME QUICK MENU (botões grandes) -->
 	  <section id="homeQuick" class="home-quick">
       <div class="home-buttons">
-        <button id="homeBuscar" class="big-btn">Buscar Posto</button>
-        <button id="sbTracarRotas" class="quick-item">
-            <i class="fa-solid fa-route"></i> Traçar nova rota
+        <button id="homeBuscar" class="big-btn">
+          <i class="fa-solid fa-magnifying-glass"></i>
+          <span>Buscar Posto</span>
         </button>
-        <button id="homeCadastrar" class="big-btn">Cadastrar</button>
-        <button id="homeMotorista" class="big-btn btn-motorista">Modo Motorista</button>
+        <button id="sbTracarRotas" class="big-btn">
+          <i class="fa-solid fa-route"></i>
+          <span>Traçar Rota</span>
+        </button>
+        <button id="homeCadastrar" class="big-btn">
+          <i class="fa-solid fa-plus"></i>
+          <span>Cadastrar</span>
+        </button>
+        <button id="homeMotorista" class="big-btn">
+          <i class="fa-solid fa-car-side"></i>
+          <span>Modo Motorista</span>
+        </button>
       </div>
     </section>
 
@@ -304,15 +314,17 @@
   <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
   <!-- App script (carrega por último após dependências) -->
   <!-- utilidades e dados (globais) -->
-  <script src="js/data.js"></script>
-  <script src="js/utils.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/map.js"></script>
-  <script src="js/auth.js"></script>
-  <script src="js/stations.js"></script>
-  <script src="js/route.js"></script>
-  <script src="js/drivermode.js"></script> <!-- Este deve vir depois -->
-  <script src="js/main.js"></script>
+  <script src="js/database.js"></script> <!-- inicia o banco de dados -->
+  <script src="js/data.js"></script> <!-- gerencia os dados -->
+  <script src="js/utils.js"></script> <!-- utilitários de outras funções -->
+  <script src="js/ui.js"></script> <!-- gerenciamento de interface -->
+  <script src="js/map.js"></script> <!-- gerenciamento do mapa -->
+  <script src="js/auth.js"></script>  <!-- lida com autenticação -->
+  <script src="js/stations.js"></script> <!-- gerenciamento de estações -->
+  <script src="js/route.js"></script> <!-- gerenciamento de rotas -->
+  <script src="js/drivermode.js"></script> <!-- gerenciamento do modo motorista -->
+  <script src="js/main.js"></script> <!-- script principal com a conexão entre os scripts -->
+
 
 
 

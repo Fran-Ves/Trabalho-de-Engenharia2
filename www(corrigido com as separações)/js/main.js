@@ -1,8 +1,35 @@
-document.addEventListener('DOMContentLoaded', function() {
-    loadData();
-    setupUI();
-    initMap();
-    attachEventListeners();
+document.addEventListener('DOMContentLoaded', async function() {
+    console.log('🚀 Iniciando aplicação...');
+    
+    try {
+        // Inicializar banco de dados primeiro
+        if (typeof initDatabaseAndLoad === 'function') {
+            await initDatabaseAndLoad();
+        } else {
+            // Fallback: carregar do localStorage
+            loadData();
+        }
+        
+        setupUI();
+        initMap();
+        attachEventListeners();
+        
+        console.log('✅ Aplicação inicializada com sucesso');
+    } catch (error) {
+        console.error('❌ Erro na inicialização:', error);
+        
+        // Tentar fallback completo
+        try {
+            loadData();
+            setupUI();
+            initMap();
+            attachEventListeners();
+            showToast('⚠️ Modo offline ativado (banco de dados local)');
+        } catch (fallbackError) {
+            console.error('❌ Falha no fallback:', fallbackError);
+            showToast('❌ Erro crítico ao inicializar aplicação');
+        }
+    }
 });
 
 function handleSearch() {
@@ -173,9 +200,8 @@ function attachEventListeners() {
     const selectOnMapBtn = document.getElementById('selectOnMapScreenBtn');
     if (selectOnMapBtn) {
         selectOnMapBtn.addEventListener('click', function() {
-            selectingLocationForPosto = true;
+            startLocationSelectionForPosto();
             hideScreen('screenRegisterPosto');
-            showToast('📍 Toque no mapa para selecionar a localização do posto');
         });
     }
 
@@ -312,6 +338,18 @@ function showStationOptions(stations, query) {
         showToast(`Encontramos ${stations.length} postos. Indo para o primeiro: ${stations[0].name}`);
     }
 }
+
+window.addEventListener('DOMContentLoaded', function() {
+    // Ajustar botões após tudo carregar
+    setTimeout(() => {
+        if (typeof adjustHomeQuickPosition === 'function') {
+            adjustHomeQuickPosition();
+        }
+        if (typeof equalizeButtonSizes === 'function') {
+            equalizeButtonSizes();
+        }
+    }, 500);
+});
 
 window.handleLocationSelection = handleLocationSelection;
 window.handleRoutePointSelection = handleRoutePointSelection;

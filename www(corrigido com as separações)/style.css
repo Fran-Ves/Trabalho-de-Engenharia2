@@ -1311,3 +1311,288 @@ body:not(.driver-mode-active) .home-quick {
   cursor: pointer;
   padding: 5px;
 }
+
+/* Estilo para marcador temporário */
+.temp-marker {
+    animation: pulse-red 1.5s infinite;
+}
+
+@keyframes pulse-red {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+
+/* Estilo para indicador de localização selecionada */
+#locInfoScreen.selected {
+    color: #1976d2 !important;
+    font-weight: bold !important;
+    background: #e3f2fd;
+    padding: 4px 8px;
+    border-radius: 4px;
+    border-left: 3px solid #1976d2;
+}
+
+/* Botão de seleção ativo */
+#selectOnMapScreenBtn.active {
+    background: #f44336 !important;
+    color: white !important;
+    border: 2px solid #d32f2f !important;
+}
+
+/* Garante que elementos do mapa sejam escondidos quando não na tela principal */
+body:not(.map-visible) #homeQuick,
+body:not(.map-visible) #sidebar,
+body:not(.map-visible) .route-panel,
+body:not(.map-visible) #driverModePanel,
+body:not(.map-visible) .quick-menu,
+body:not(.map-visible) .search-results,
+body:not(.map-visible) .minimal-recommendations {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Classe para marcar quando o mapa está visível */
+body.map-visible #homeQuick,
+body.map-visible .home-quick,
+body.map-visible .home-buttons {
+    display: block !important;
+    visibility: visible !important;
+}
+
+/* Garante que elementos hidden funcionem corretamente */
+.hidden {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* CORREÇÃO DOS BOTÕES HOME FLUTUANTES */
+#homeQuick {
+  position: fixed;
+  top: 80px;
+  right: 20px;
+  z-index: 1700;
+  width: auto;
+  max-width: 200px;
+  pointer-events: none;
+  transition: all 0.3s ease;
+}
+
+.home-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch; /* Faz os botões terem a mesma largura */
+  pointer-events: auto;
+  width: 100%;
+}
+
+.big-btn {
+  /* Dimensões iguais para todos os botões */
+  width: 100%;
+  min-height: 80px; /* Altura mínima igual */
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 700;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+  box-sizing: border-box;
+}
+
+/* Garantir que o ícone e texto fiquem alinhados */
+.big-btn i {
+  font-size: 24px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.big-btn span {
+  display: block;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+/* Cores diferentes para cada botão */
+#homeBuscar {
+  background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+}
+
+#sbTracarRotas {
+  background: linear-gradient(135deg, #388E3C 0%, #2E7D32 100%);
+}
+
+#homeCadastrar {
+  background: linear-gradient(135deg, #F57C00 0%, #EF6C00 100%);
+}
+
+#homeMotorista {
+  background: linear-gradient(135deg, #7C4DFF 0%, #651FFF 100%);
+}
+
+/* Efeito hover */
+.big-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0,0,0,0.25);
+}
+
+/* Quando a sidebar estiver aberta */
+#homeQuick.sidebar-open {
+  right: 340px; /* Largura da sidebar + margem */
+}
+
+/* RESPONSIVIDADE - Ajustes para telas menores */
+
+/* Tablets e telas médias */
+@media (max-width: 768px) {
+  #homeQuick {
+    top: 70px;
+    right: 15px;
+    max-width: 180px;
+  }
+  
+  .big-btn {
+    min-height: 70px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  
+  .big-btn i {
+    font-size: 20px;
+    margin-bottom: 6px;
+  }
+  
+  #homeQuick.sidebar-open {
+    right: 300px; /* Ajuste para sidebar menor */
+  }
+}
+
+/* Smartphones */
+@media (max-width: 480px) {
+  #homeQuick {
+    top: 65px;
+    right: 10px;
+    max-width: 160px;
+  }
+  
+  .big-btn {
+    min-height: 60px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  
+  .big-btn i {
+    font-size: 18px;
+    margin-bottom: 4px;
+  }
+  
+  #homeQuick.sidebar-open {
+    right: 280px;
+  }
+}
+
+/* Telas muito pequenas (smartphones pequenos) */
+@media (max-width: 380px) {
+  #homeQuick {
+    top: 60px;
+    right: 8px;
+    max-width: 140px;
+  }
+  
+  .big-btn {
+    min-height: 55px;
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+  
+  .big-btn i {
+    font-size: 16px;
+    margin-bottom: 4px;
+  }
+  
+  #homeQuick.sidebar-open {
+    right: 260px;
+  }
+}
+
+/* Telas grandes */
+@media (min-width: 1024px) {
+  #homeQuick {
+    top: 90px;
+    right: 30px;
+    max-width: 220px;
+  }
+  
+  .big-btn {
+    min-height: 90px;
+    padding: 16px 20px;
+    font-size: 15px;
+  }
+  
+  .big-btn i {
+    font-size: 28px;
+    margin-bottom: 10px;
+  }
+}
+
+/* Garantir que os botões não saiam da tela */
+@media (max-height: 600px) {
+  #homeQuick {
+    top: 60px;
+  }
+  
+  .big-btn {
+    min-height: 50px;
+    padding: 6px 10px;
+  }
+  
+  .big-btn i {
+    font-size: 18px;
+    margin-bottom: 2px;
+  }
+  
+  .home-buttons {
+    gap: 8px;
+  }
+}
+
+/* Melhorar contraste dos textos */
+.big-btn {
+  text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+}
+
+/* Para garantir que os botões não fiquem atrás de outros elementos */
+#homeQuick {
+  z-index: 1700;
+}
+
+/* Ajuste para quando estiver no modo motorista */
+body.driver-mode-active #homeQuick {
+  display: none !important;
+}
+
+/* Garantir que o botão Traçar Rota tenha as mesmas propriedades */
+#sbTracarRotas.big-btn {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+}
+
+/* Classe para forçar o posicionamento seguro */
+.position-safe {
+  position: fixed !important;
+  overflow: visible !important;
+}

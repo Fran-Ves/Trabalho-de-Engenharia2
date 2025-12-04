@@ -2,8 +2,6 @@
 
 function enterDriverMode() {
     console.log('🚗 DEBUG: enterDriverMode chamada');
-    console.log('routeFoundStations:', routeFoundStations);
-    console.log('driverMode (antes):', driverMode);
     
     if (!routeFoundStations || routeFoundStations.length === 0) {
         console.error('❌ routeFoundStations vazio ou não definido');
@@ -13,13 +11,14 @@ function enterDriverMode() {
 
     driverMode = true;
     document.body.classList.add('driver-mode-active');
+    document.body.classList.add('map-visible'); // Garantir que o mapa fique visível
 
-    const topbar = document.getElementById('topbar');
-    const homeQuick = document.getElementById('homeQuick');
-    const sidebar = document.getElementById('sidebar');
-    if (topbar) topbar.style.display = 'none';
-    if (homeQuick) homeQuick.style.display = 'none';
-    if (sidebar) sidebar.classList.add('hidden');
+    // Esconder elementos desnecessários
+    const elementsToHide = ['topbar', 'homeQuick', 'sidebar'];
+    elementsToHide.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.classList.add('hidden');
+    });
 
     voiceAlertCooldown = {};
     if (speechSynthesis) speechSynthesis.getVoices();
@@ -29,7 +28,11 @@ function enterDriverMode() {
     selectDriverStations();
 
     const driverPanel = document.getElementById('driverModePanel');
-    if (driverPanel) driverPanel.classList.remove('hidden');
+    if (driverPanel) {
+        driverPanel.classList.remove('hidden');
+        // Posicionar corretamente no modo motorista
+        driverPanel.style.display = 'block';
+    }
 
     adjustMapForDriverMode();
     showToast('🚗 Modo motorista ativado - Alertas de voz ativos!');
@@ -39,15 +42,23 @@ function exitDriverModeHandler() {
     console.log('🚗 Saindo do modo motorista...');
     driverMode = false;
     document.body.classList.remove('driver-mode-active');
+    document.body.classList.add('map-visible'); // Garantir que o mapa fique visível
+    
     if (speechSynthesis) speechSynthesis.cancel();
+    
     const driverPanel = document.getElementById('driverModePanel');
     if (driverPanel) driverPanel.classList.add('hidden');
 
-    const topbar = document.getElementById('topbar');
+    // Mostrar elementos normais do mapa
+    const elementsToShow = ['topbar', 'homeQuick'];
+    elementsToShow.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) element.classList.remove('hidden');
+    });
+
+    // Reposicionar botões home
     const homeQuick = document.getElementById('homeQuick');
-    if (topbar) topbar.style.display = 'flex';
     if (homeQuick) {
-        homeQuick.style.display = 'block';
         homeQuick.style.right = '20px';
         homeQuick.style.transform = 'none';
         homeQuick.classList.remove('sidebar-open');

@@ -1,6 +1,6 @@
 let map;
 let gasMarkers;
-let control;
+let control = null; // Inicializar como null
 let userLocationMarker;
 let userAccuracyCircle;
 let isTrackingLocation = false;
@@ -27,34 +27,8 @@ function initMap() {
     
     gasMarkers = L.layerGroup().addTo(map);
     
-    control = L.Routing.control({
-        router: L.Routing.osrmv1({ 
-            serviceUrl: 'https://router.project-osrm.org/route/v1' 
-        }),
-        waypoints: [],
-        routeWhileDragging: true,
-        fitSelectedRoutes: true,
-        showAlternatives: false,
-        altLineOptions: {
-            styles: [
-                {color: 'black', opacity: 15, weight: 9},
-                {color: 'white', opacity: 0.8, weight: 6},
-                {color: 'blue', opacity: 0.5, weight: 2}
-            ]
-        },
-        lineOptions: {
-            styles: [
-                {color: 'black', opacity: 0.15, weight: 9},
-                {color: 'white', opacity: 0.8, weight: 6},
-                {color: 'blue', opacity: 0.5, weight: 2}
-            ]
-        },
-        show: false,
-        addWaypoints: false,
-        draggableWaypoints: false
-    }).addTo(map);
-
-    control.on('routesfound', handleRoutesFound);
+    // Inicializar o controle de rotas
+    initRoutingControl();
     
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
@@ -83,7 +57,6 @@ function initMap() {
 
     map.on('layeradd', function(e) {
         if (e.layer instanceof L.CircleMarker) {
-            // Encontra a estação correspondente às coordenadas
             const layerLatLng = e.layer.getLatLng();
             const station = gasData.find(s => 
                 s.coords && 
@@ -101,6 +74,115 @@ function initMap() {
     renderAllMarkers();
     
     console.log('✅ Mapa inicializado');
+}
+
+function handleLocationSelection(e) {
+    if (!selectingLocationForPosto) {
+        return;
+    }
+    
+    console.log('📍 Localização selecionada para posto:', e.latlng);
+    
+    // Chamar função de finalização - garantir que existe
+    if (typeof finishLocationSelection === 'function') {
+        finishLocationSelection(e.latlng);
+    } else {
+        console.error('❌ finishLocationSelection não está definida');
+        // Fallback básico
+        selectingLocationForPosto = false;
+        selectedLocationForPosto = e.latlng;
+        
+        showToast('Localização selecionada! Volte para tela de cadastro.');
+        
+        // Tentar voltar para tela de cadastro
+        setTimeout(() => {
+            const screen = document.getElementById('screenRegisterPosto');
+            if (screen) {
+                screen.classList.remove('hidden');
+                screen.setAttribute('aria-hidden', 'false');
+            }
+        }, 500);
+    }
+}
+
+function initRoutingControl() {
+    try {
+        if (!L.Routing || !L.Routing.control) {
+            console.error('❌ Leaflet Routing Machine não carregado');
+            return null;
+        }
+        
+        control = L.Routing.control({
+            router: L.Routing.osrmv1({ 
+                serviceUrl: 'https://router.project-osrm.org/route/v1' 
+            }),
+            waypoints: [],
+            routeWhileDragging: true,
+            fitSelectedRoutes: true,
+            showAlternatives: false,
+            lineOptions: {
+                styles: [
+                    {color: 'black', opacity: 0.15, weight: 9},
+                    {color: 'white', opacity: 0.8, weight: 6},
+                    {color: 'blue', opacity: 0.5, weight: 2}
+                ]
+            },
+            show: false,
+            addWaypoints: false,
+            draggableWaypoints: false
+        }).addTo(map);
+
+        // Anexar evento de forma segura
+        if (control && control.on) {
+            control.on('routesfound', handleRoutesFound);
+            console.log('✅ Controle de rotas inicializado');
+            return control;
+        }
+    } catch (error) {
+        console.error('❌ Erro ao inicializar controle de rotas:', error);
+        showToast('Erro ao inicializar sistema de rotas');
+        return null;
+    }
+    return null;
+}
+
+function stopCurrentRoute() {
+    console.log('🛑 Parando rota atual...');
+    
+    if (control) {
+        control.setWaypoints([]);
+    }
+    
+    routeFoundStations = [];
+    tempWaypoints = [];
+    tempWayMarkers.forEach(marker => {
+        if (marker && map.hasLayer(marker)) {
+            map.removeLayer(marker);
+        }
+    });
+    tempWayMarkers = [];
+    driverStations = [];
+    
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar) {
+        sidebar.classList.add('hidden');
+        adjustHomeButtonsForSidebar(false);
+    }
+    
+    if (driverMode) {
+        exitDriverModeHandler();
+    } else {
+        const homeQuick = document.getElementById('homeQuick');
+        if (homeQuick) {
+            homeQuick.style.right = '20px';
+            homeQuick.style.transform = 'none';
+            homeQuick.classList.remove('sidebar-open');
+        }
+    }
+    
+    renderAllMarkers();
+    
+    showToast('🗺️ Rota removida - Você pode traçar uma nova');
 }
 
 function toggleLocationTracking() {
@@ -349,3 +431,4 @@ function navigateToStation(stationId, keepMode = true) {
 
 // Torna a função global
 window.navigateToStation = navigateToStation;
+

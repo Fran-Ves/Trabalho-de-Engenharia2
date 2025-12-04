@@ -1284,3 +1284,30 @@ body:not(.driver-mode-active) .home-quick {
 #homeQuick.sidebar-open {
   right: 340px !important;
 }
+
+.search-wrap {
+  flex: 1;
+  margin: 0 10px;
+  position: relative;
+  display: flex;
+}
+
+.search-wrap input {
+  flex: 1;
+  padding: 8px 40px 8px 12px;
+  border-radius: 20px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.search-btn {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: transparent;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 5px;
+}

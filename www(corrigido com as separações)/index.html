@@ -30,8 +30,11 @@
         <i class="fa-solid fa-user"></i>
     </button>
     <div class="search-wrap">
-        <input id="searchInput" type="search" placeholder="Buscar posto por nome..." />
-    </div>
+      <input id="searchInput" type="search" placeholder="Buscar posto por nome..." />
+      <button id="searchBtn" class="icon-btn search-btn" title="Buscar">
+          <i class="fa-solid fa-magnifying-glass"></i>
+      </button>
+  </div>
     <button id="addBtn" class="icon-btn" title="Cadastrar">
         <i class="fa-solid fa-plus"></i>
     </button>
@@ -303,12 +306,12 @@
   <!-- utilidades e dados (globais) -->
   <script src="js/data.js"></script>
   <script src="js/utils.js"></script>
-  <script src="js/route.js"></script>  <!-- Carregar ANTES do map.js -->
-  <script src="js/map.js"></script>
-  <script src="js/stations.js"></script>
-  <script src="js/auth.js"></script>
-  <script src="js/drivermode.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/stations.js"></script>
+  <script src="js/route.js"></script>
+  <script src="js/drivermode.js"></script> <!-- Este deve vir depois -->
   <script src="js/main.js"></script>
 
 

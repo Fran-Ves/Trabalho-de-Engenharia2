@@ -5,6 +5,39 @@ document.addEventListener('DOMContentLoaded', function() {
     attachEventListeners();
 });
 
+function handleSearch() {
+    const searchInput = document.getElementById('searchInput');
+    if (!searchInput) return;
+    
+    const query = searchInput.value.trim();
+    
+    if (!query) {
+        showToast('Digite o nome de um posto');
+        searchInput.focus();
+        return;
+    }
+    
+    const station = findStationByName(query);
+    if (station) {
+        navigateToStation(station.id);
+        searchInput.value = ''; // Limpa o campo
+    } else {
+        const similarStations = gasData.filter(s => 
+            s.name && s.name.toLowerCase().includes(query.toLowerCase())
+        );
+        
+        if (similarStations.length > 0) {
+            if (similarStations.length === 1) {
+                navigateToStation(similarStations[0].id);
+            } else {
+                showStationOptions(similarStations, query);
+            }
+        } else {
+            showToast(`❌ Nenhum posto encontrado com "${query}"`);
+        }
+    }
+}
+
 function attachEventListeners() {
     console.log('🔗 Anexando event listeners...');
     
@@ -15,7 +48,15 @@ function attachEventListeners() {
     if (homeBuscar) {
         homeBuscar.addEventListener('click', function() {
             console.log('🔍 Botão Buscar clicado');
-            document.getElementById('searchInput')?.focus();
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.focus();
+                
+                // Se já tiver texto, executa a busca
+                if (searchInput.value.trim()) {
+                    handleSearch();
+                }
+            }
         });
     }
     
@@ -198,7 +239,12 @@ function attachEventListeners() {
     if (homeMotorista) {
         homeMotorista.addEventListener('click', function() {
             console.log('🚗 Botão Modo Motorista clicado');
-            enterDriverMode();
+            if (typeof enterDriverMode === 'function') {
+                enterDriverMode();
+            } else {
+                console.error('❌ enterDriverMode não está definido');
+                showToast('Erro ao ativar modo motorista');
+            }
         });
     }
     
@@ -228,6 +274,24 @@ function attachEventListeners() {
             exitDriverModeHandler();
         });
     }
+
+    const searchInput = document.getElementById('searchInput');
+    const searchBtn = document.getElementById('searchBtn');
+
+    // Sugestões em tempo real
+    if (searchInput) {
+        searchInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                handleSearch();
+            }
+        });
+    }
+    
+    // Botão de busca
+    if (searchBtn) {
+        searchBtn.addEventListener('click', handleSearch);
+    }
     
     // Adiciona listeners para elementos dinâmicos
     document.addEventListener('click', function(e) {
@@ -235,8 +299,24 @@ function attachEventListeners() {
     });
 }
 
+function showStationOptions(stations, query) {
+    if (!stations || stations.length === 0) return;
+    
+    if (stations.length <= 3) {
+        const stationNames = stations.map(s => s.name).join(', ');
+        if (confirm(`Encontramos ${stations.length} postos:\n${stationNames}\n\nDeseja ver o primeiro?`)) {
+            navigateToStation(stations[0].id);
+        }
+    } else {
+        navigateToStation(stations[0].id);
+        showToast(`Encontramos ${stations.length} postos. Indo para o primeiro: ${stations[0].name}`);
+    }
+}
+
 window.handleLocationSelection = handleLocationSelection;
 window.handleRoutePointSelection = handleRoutePointSelection;
 window.startRouteMode = startRouteMode;
 window.promptNewPrice = promptNewPrice;
 window.confirmPrice = confirmPrice;
+window.showStationOptions = showStationOptions;
+window.handleSearch = handleSearch;

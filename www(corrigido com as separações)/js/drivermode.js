@@ -1,12 +1,12 @@
 /* drivermode.js — modo motorista e alertas por voz */
-let driverMode = false;
-let driverStations = [];
-let voiceAlertCooldown = {};
-let speechSynthesis = window.speechSynthesis;
 
 function enterDriverMode() {
-    console.log('🚗 Entrando no modo motorista...');
+    console.log('🚗 DEBUG: enterDriverMode chamada');
+    console.log('routeFoundStations:', routeFoundStations);
+    console.log('driverMode (antes):', driverMode);
+    
     if (!routeFoundStations || routeFoundStations.length === 0) {
+        console.error('❌ routeFoundStations vazio ou não definido');
         showToast('⚠️ Trace uma rota primeiro para usar o modo motorista');
         return;
     }
@@ -116,6 +116,12 @@ function updateDriverPanel() {
             <div class="station-price">R$ ${station.prices?.gas || '--'}</div>
             <div class="station-trust">${station.trustScore || '--'}/10</div>
         `;
+        
+        // CLIQUE PARA FOCAR NO POSTO (mesma lógica)
+        card.addEventListener('click', function() {
+            navigateToStation(station.id, true); // true = mantém modo motorista
+        });
+        
         panel.appendChild(card);
     });
 }
@@ -151,3 +157,7 @@ function adjustMapForDriverMode() {
 function restoreMapFromDriverMode() {
     // placeholder
 }
+
+window.enterDriverMode = enterDriverMode;
+window.exitDriverMode = exitDriverMode;
+window.exitDriverModeHandler = exitDriverModeHandler;

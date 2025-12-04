@@ -24,6 +24,8 @@ function renderAllMarkers() {
             radius, color, fillColor: color, fillOpacity: 0.8, weight: 2, className
         }).addTo(gasMarkers);
 
+        marker.stationId = station.id;
+
         let pendingHtml = '';
         if (station.pendingChanges && station.pendingChanges.length > 0) {
             pendingHtml = getPendingChangesHtml(station);
@@ -204,3 +206,84 @@ function getAnonId() {
     if (!aid) { aid = 'a_' + Date.now(); localStorage.setItem('anonId', aid); }
     return aid;
 }
+
+function searchStations(query) {
+    if (!query || query.trim() === '') {
+        renderAllMarkers(); // Mostra todos se busca vazia
+        return [];
+    }
+    
+    const searchTerm = query.toLowerCase().trim();
+    
+    const filteredStations = gasData.filter(station => {
+        return (
+            (station.name && station.name.toLowerCase().includes(searchTerm)) ||
+            (station.cnpj && station.cnpj.includes(searchTerm))
+        );
+    });
+    
+    // Foca no mapa no primeiro resultado
+    if (filteredStations.length > 0 && filteredStations[0].coords) {
+        map.setView(filteredStations[0].coords, 15);
+        
+        // Destaca os resultados
+        if (gasMarkers) {
+            gasMarkers.clearLayers();
+            
+            filteredStations.forEach(station => {
+                const marker = L.circleMarker(station.coords, {
+                    radius: 12,
+                    color: '#FF9800',
+                    fillColor: '#FFB74D',
+                    fillOpacity: 0.9,
+                    weight: 3
+                }).addTo(gasMarkers);
+                
+                const popupContent = `
+                    <div style="font-weight: bold; margin-bottom: 8px;">${escapeHtml(station.name)}</div>
+                    <div style="color:#FF9800; font-weight:bold; font-size:11px;">RESULTADO DA BUSCA</div>
+                    <div>Gasolina: R$ ${station.prices?.gas || '--'}</div>
+                    <div>Confiabilidade: ${station.trustScore || '5.0'}/10</div>
+                `;
+                marker.bindPopup(popupContent);
+                marker.stationId = station.id;
+            });
+        }
+        
+        showToast(`🔍 ${filteredStations.length} posto(s) encontrado(s)`);
+    } else {
+        showToast('❌ Nenhum posto encontrado com essa busca');
+    }
+    
+    return filteredStations;
+}
+
+window.searchStations = searchStations;
+
+/* stations.js - Adicione esta função */
+
+function findStationByName(query) {
+    if (!query || query.trim() === '') return null;
+    
+    const searchTerm = query.toLowerCase().trim();
+    
+    // 1. Busca por correspondência exata (ignorando case)
+    const exactMatch = gasData.find(station => 
+        station.name && station.name.toLowerCase() === searchTerm
+    );
+    if (exactMatch) return exactMatch;
+    
+    // 2. Busca por correspondência parcial
+    const partialMatches = gasData.filter(station => 
+        station.name && station.name.toLowerCase().includes(searchTerm)
+    );
+    
+    // Retorna o primeiro resultado se houver apenas um
+    if (partialMatches.length === 1) return partialMatches[0];
+    
+    // 3. Retorna null se múltiplos resultados ou nenhum
+    return null;
+}
+
+// Adiciona ao escopo global
+window.findStationByName = findStationByName;

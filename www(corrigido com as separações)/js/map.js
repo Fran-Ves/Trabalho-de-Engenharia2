@@ -54,49 +54,7 @@ function initMap() {
         draggableWaypoints: false
     }).addTo(map);
 
-    control.on('routesfound', function(e) {
-        const routes = e.routes;
-        const route = routes[0];
-        console.log('🛣️ Rota encontrada');
-        
-        if (route && route.coordinates) {
-            const coords = route.coordinates; 
-            routeFoundStations = findStationsAlongRoute(coords);
-            
-            renderRouteStationsPanel(routeFoundStations);
-            
-            if (gasMarkers) {
-                gasMarkers.clearLayers();
-                
-                routeFoundStations.forEach(station => {
-                    const marker = L.circleMarker(station.coords, {
-                        radius: 12,
-                        color: '#388E3C',
-                        fillColor: '#4CAF50',
-                        fillOpacity: 0.9,
-                        weight: 3
-                    }).addTo(gasMarkers);
-                    
-                    const popupContent = `
-                        <div style="font-weight: bold; margin-bottom: 8px;">${escapeHtml(station.name)}</div>
-                        <div style="color:green; font-weight:bold; font-size:11px;">NA SUA ROTA</div>
-                        <div>Gasolina: R$ ${station.prices?.gas || '--'}</div>
-                    `;
-                    marker.bindPopup(popupContent);
-                });
-            }
-            
-            showToast(`📍 ${routeFoundStations.length} postos encontrados num raio de 50m`);
-            
-            if (routeFoundStations.length > 0) {
-                setTimeout(() => {
-                    if (confirm(`Encontramos ${routeFoundStations.length} postos na sua rota! Deseja ativar o modo motorista?`)) {
-                        enterDriverMode();
-                    }
-                }, 1000);
-            }
-        }
-    });
+    control.on('routesfound', handleRoutesFound);
     
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
@@ -120,6 +78,22 @@ function initMap() {
             handleRoutePointSelection(e);
         } else if (selectingLocationForPosto) {
             handleLocationSelection(e);
+        }
+    });
+
+    map.on('layeradd', function(e) {
+        if (e.layer instanceof L.CircleMarker) {
+            // Encontra a estação correspondente às coordenadas
+            const layerLatLng = e.layer.getLatLng();
+            const station = gasData.find(s => 
+                s.coords && 
+                s.coords[0] === layerLatLng.lat && 
+                s.coords[1] === layerLatLng.lng
+            );
+            
+            if (station) {
+                e.layer.stationId = station.id;
+            }
         }
     });
     
@@ -249,7 +223,7 @@ function updateUserLocation(position) {
     
     if (driverMode) {
         updateDriverDistances();
-        checkProximityAlerts();
+        checkProximityAlerts(); // ← Adicione esta linha
     }
 }
 
@@ -336,3 +310,42 @@ map.on('click', function(e) {
         handleLocationSelection(e);
     }
 });
+
+function navigateToStation(stationId, keepMode = true) {
+    const station = gasData.find(s => s.id === stationId);
+    if (!station || !station.coords) return;
+    
+    // Para modo motorista, pausa o seguimento temporariamente
+    if (driverMode && keepMode) {
+        // Adiciona um pequeno destaque visual
+        const highlightCircle = L.circle(station.coords, {
+            radius: 30,
+            color: '#FF9800',
+            fillColor: '#FF9800',
+            fillOpacity: 0.2,
+            weight: 2
+        }).addTo(map);
+        
+        // Remove após alguns segundos
+        setTimeout(() => {
+            if (highlightCircle && map.hasLayer(highlightCircle)) {
+                map.removeLayer(highlightCircle);
+            }
+        }, 3000);
+    }
+    
+    // Navega para o posto
+    map.setView(station.coords, Math.max(map.getZoom(), 16));
+    
+    // Encontra e abre o popup
+    gasMarkers.eachLayer(function(layer) {
+        if (layer.stationId === stationId) {
+            layer.openPopup();
+        }
+    });
+    
+    showToast(`📍 Navegando para: ${station.name}`);
+}
+
+// Torna a função global
+window.navigateToStation = navigateToStation;

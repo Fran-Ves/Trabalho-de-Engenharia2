@@ -149,11 +149,9 @@ function renderRouteStationsPanel(stations) {
                 <span class="price">R$ ${station.prices?.gas || '--'}</span>
             `;
             
+            // CLIQUE PARA FOCAR NO POSTO
             li.addEventListener('click', function() {
-                if (station.coords) {
-                    map.setView(station.coords, 16);
-                    map.closePopup();
-                }
+                navigateToStation(station.id);
             });
             
             list.appendChild(li);
@@ -203,10 +201,58 @@ function stopCurrentRoute() {
     showToast('🗺️ Rota removida - Você pode traçar uma nova');
 }
 
-control.on('routesfound', function(e) {
+// control.on('routesfound', function(e) {
+//     const routes = e.routes;
+//     const route = routes[0];
+//     console.log('🛣️ Rota encontrada');
+    
+//     if (route && route.coordinates) {
+//         // 1. Encontra os postos na rota
+//         const coords = route.coordinates; 
+//         routeFoundStations = findStationsAlongRoute(coords);
+        
+//         // 2. Atualiza a lista lateral
+//         renderRouteStationsPanel(routeFoundStations);
+        
+//         // 3. ATUALIZA O MAPA
+//         if (gasMarkers) {
+//             gasMarkers.clearLayers();
+            
+//             routeFoundStations.forEach(station => {
+//                 const marker = L.circleMarker(station.coords, {
+//                     radius: 12,
+//                     color: '#388E3C',
+//                     fillColor: '#4CAF50',
+//                     fillOpacity: 0.9,
+//                     weight: 3
+//                 }).addTo(gasMarkers);
+                
+//                 const popupContent = `
+//                     <div style="font-weight: bold; margin-bottom: 8px;">${escapeHtml(station.name)}</div>
+//                     <div style="color:green; font-weight:bold; font-size:11px;">NA SUA ROTA</div>
+//                     <div>Gasolina: R$ ${station.prices?.gas || '--'}</div>
+//                 `;
+//                 marker.bindPopup(popupContent);
+//             });
+//         }
+        
+//         showToast(`📍 ${routeFoundStations.length} postos encontrados num raio de 50m`);
+        
+//         // 4. PERGUNTA SE QUER ATIVAR MODO MOTORISTA
+//         if (confirm(`Encontramos ${routeFoundStations.length} postos na sua rota! Deseja ativar o modo motorista?`)) {
+//             if (typeof enterDriverMode === 'function') {
+//                 enterDriverMode();
+//             } else {
+//                 console.error('❌ Função enterDriverMode não disponível');
+//             }
+//         }
+//     }
+// });
+
+function handleRoutesFound(e) {
     const routes = e.routes;
     const route = routes[0];
-    console.log('🛣️ Rota encontrada');
+    console.log('🛣️ Rota encontrada (handler)');
     
     if (route && route.coordinates) {
         // 1. Encontra os postos na rota
@@ -235,6 +281,7 @@ control.on('routesfound', function(e) {
                     <div>Gasolina: R$ ${station.prices?.gas || '--'}</div>
                 `;
                 marker.bindPopup(popupContent);
+                marker.stationId = station.id; // Armazena o ID para referência
             });
         }
         
@@ -249,7 +296,7 @@ control.on('routesfound', function(e) {
             }, 1000);
         }
     }
-});
+}
 
 function handleLocationSelection(e) {
     if (tempMarker) {
@@ -267,3 +314,5 @@ function handleLocationSelection(e) {
     
     showToast('📍 Localização selecionada! Clique em "Salvar Posto" para finalizar.');
 }
+
+window.handleRoutesFound = handleRoutesFound;

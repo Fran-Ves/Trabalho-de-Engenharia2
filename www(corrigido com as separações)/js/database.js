@@ -1,4 +1,4 @@
-/* database.js — IndexedDB para armazenamento local */
+/* database.js — IndexedDB para armazenamento local COM ARQUITETURA ORIENTADA A EVENTOS */
 
 const DB_NAME = 'PostosAppDB';
 const DB_VERSION = 3;
@@ -11,11 +11,67 @@ const STORES = {
   CERTIFICATIONS: 'certifications'
 };
 
+// ========== SISTEMA DE EVENTOS ==========
+const DatabaseEvents = {
+  // Eventos disponíveis
+  DB_READY: 'database:ready',
+  DB_ERROR: 'database:error',
+  DATA_CHANGED: 'data:changed',
+  SYNC_STARTED: 'sync:started',
+  SYNC_COMPLETED: 'sync:completed',
+  SYNC_FAILED: 'sync:failed'
+};
+
+// Gerenciador de eventos centralizado
+class DatabaseEventEmitter {
+  constructor() {
+    this.listeners = new Map();
+  }
+
+  on(event, callback) {
+    if (!this.listeners.has(event)) {
+      this.listeners.set(event, []);
+    }
+    this.listeners.get(event).push(callback);
+    return () => this.off(event, callback);
+  }
+
+  off(event, callback) {
+    if (!this.listeners.has(event)) return;
+    const callbacks = this.listeners.get(event);
+    const index = callbacks.indexOf(callback);
+    if (index > -1) callbacks.splice(index, 1);
+  }
+
+  emit(event, data = null) {
+    if (!this.listeners.has(event)) return;
+    this.listeners.get(event).forEach(callback => {
+      try {
+        callback(data);
+      } catch (error) {
+        console.error(`Erro no listener do evento ${event}:`, error);
+      }
+    });
+  }
+
+  once(event, callback) {
+    const onceWrapper = (data) => {
+      callback(data);
+      this.off(event, onceWrapper);
+    };
+    this.on(event, onceWrapper);
+  }
+}
+
+// Instância global do emissor de eventos
+const dbEventEmitter = new DatabaseEventEmitter();
+
+// ========== FUNÇÕES DE BANCO DE DADOS (MANTENDO INTERFACE ORIGINAL) ==========
 let db = null;
 let dbInitialized = false;
 let dbInitializationPromise = null;
 
-// Inicializar/abrir banco (com retry)
+// Inicializar/abrir banco (com eventos)
 function initDatabase() {
   if (dbInitializationPromise) {
     return dbInitializationPromise;
@@ -23,8 +79,9 @@ function initDatabase() {
   
   dbInitializationPromise = new Promise((resolve, reject) => {
     if (!window.indexedDB) {
-      console.error('❌ IndexedDB não suportado neste navegador');
-      reject(new Error('IndexedDB não suportado'));
+      const error = new Error('IndexedDB não suportado neste navegador');
+      dbEventEmitter.emit(DatabaseEvents.DB_ERROR, error);
+      reject(error);
       return;
     }
     
@@ -32,6 +89,7 @@ function initDatabase() {
     
     request.onerror = (event) => {
       console.error('❌ Erro ao abrir banco:', event.target.error);
+      dbEventEmitter.emit(DatabaseEvents.DB_ERROR, event.target.error);
       reject(event.target.error);
     };
     
@@ -39,6 +97,16 @@ function initDatabase() {
       db = event.target.result;
       dbInitialized = true;
       console.log('✅ Banco de dados aberto');
+      
+      // Emitir evento de banco pronto
+      dbEventEmitter.emit(DatabaseEvents.DB_READY, db);
+      
+      // Configurar eventos de erro do banco
+      db.onerror = (errEvent) => {
+        console.error('❌ Erro no banco de dados:', errEvent.target.error);
+        dbEventEmitter.emit(DatabaseEvents.DB_ERROR, errEvent.target.error);
+      };
+      
       resolve(db);
     };
     
@@ -90,17 +158,30 @@ function ensureDBReady() {
   return db;
 }
 
-// Operações CRUD atualizadas
+// Operações CRUD com eventos
 function dbAdd(storeName, data) {
   ensureDBReady();
   return new Promise((resolve, reject) => {
+    dbEventEmitter.emit(DatabaseEvents.SYNC_STARTED, { storeName, data, operation: 'add' });
+    
     const transaction = db.transaction([storeName], 'readwrite');
     const store = transaction.objectStore(storeName);
     const request = store.add(data);
     
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      resolve(request.result);
+      dbEventEmitter.emit(DatabaseEvents.DATA_CHANGED, { 
+        storeName, 
+        data, 
+        operation: 'add',
+        result: request.result 
+      });
+      dbEventEmitter.emit(DatabaseEvents.SYNC_COMPLETED, { storeName, operation: 'add' });
+    };
+    
     request.onerror = (e) => {
       console.error(`❌ Erro ao adicionar em ${storeName}:`, e.target.error);
+      dbEventEmitter.emit(DatabaseEvents.SYNC_FAILED, { storeName, error: e.target.error, operation: 'add' });
       reject(e.target.error);
     };
   });
@@ -109,13 +190,26 @@ function dbAdd(storeName, data) {
 function dbPut(storeName, data) {
   ensureDBReady();
   return new Promise((resolve, reject) => {
+    dbEventEmitter.emit(DatabaseEvents.SYNC_STARTED, { storeName, data, operation: 'put' });
+    
     const transaction = db.transaction([storeName], 'readwrite');
     const store = transaction.objectStore(storeName);
     const request = store.put(data);
     
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      resolve(request.result);
+      dbEventEmitter.emit(DatabaseEvents.DATA_CHANGED, { 
+        storeName, 
+        data, 
+        operation: 'put',
+        result: request.result 
+      });
+      dbEventEmitter.emit(DatabaseEvents.SYNC_COMPLETED, { storeName, operation: 'put' });
+    };
+    
     request.onerror = (e) => {
       console.error(`❌ Erro ao atualizar em ${storeName}:`, e.target.error);
+      dbEventEmitter.emit(DatabaseEvents.SYNC_FAILED, { storeName, error: e.target.error, operation: 'put' });
       reject(e.target.error);
     };
   });
@@ -149,12 +243,42 @@ function dbGetAll(storeName, indexName = null, query = null) {
   });
 }
 
-// Carregar todos os dados (com fallback)
+// Nova função: dbDelete
+function dbDelete(storeName, key) {
+  ensureDBReady();
+  return new Promise((resolve, reject) => {
+    dbEventEmitter.emit(DatabaseEvents.SYNC_STARTED, { storeName, key, operation: 'delete' });
+    
+    const transaction = db.transaction([storeName], 'readwrite');
+    const store = transaction.objectStore(storeName);
+    const request = store.delete(key);
+    
+    request.onsuccess = () => {
+      resolve(request.result);
+      dbEventEmitter.emit(DatabaseEvents.DATA_CHANGED, { 
+        storeName, 
+        key, 
+        operation: 'delete',
+        result: request.result 
+      });
+      dbEventEmitter.emit(DatabaseEvents.SYNC_COMPLETED, { storeName, operation: 'delete' });
+    };
+    
+    request.onerror = (e) => {
+      console.error(`❌ Erro ao deletar de ${storeName}:`, e.target.error);
+      dbEventEmitter.emit(DatabaseEvents.SYNC_FAILED, { storeName, error: e.target.error, operation: 'delete' });
+      reject(e.target.error);
+    };
+  });
+}
+
+// ========== FUNÇÕES DE ALTO NÍVEL (MANTENDO INTERFACE ORIGINAL) ==========
 async function loadAllData() {
   console.log('📂 Carregando dados do IndexedDB...');
   
   try {
-    // Tentar carregar do IndexedDB
+    dbEventEmitter.emit(DatabaseEvents.SYNC_STARTED, { operation: 'loadAll' });
+    
     const [stations, usersList, historyEntries, pendingEntries, certEntries] = await Promise.all([
       dbGetAll(STORES.STATIONS).catch(() => []),
       dbGetAll(STORES.USERS).catch(() => []),
@@ -163,6 +287,7 @@ async function loadAllData() {
       dbGetAll(STORES.CERTIFICATIONS).catch(() => [])
     ]);
     
+    // Processar dados
     gasData = stations;
     users = usersList;
     
@@ -206,21 +331,27 @@ async function loadAllData() {
       currentUser: !!currentUser
     });
     
+    dbEventEmitter.emit(DatabaseEvents.DATA_CHANGED, { operation: 'loadAll' });
+    dbEventEmitter.emit(DatabaseEvents.SYNC_COMPLETED, { operation: 'loadAll' });
+    
     return true;
   } catch (error) {
     console.error('❌ Erro ao carregar dados do IndexedDB, usando fallback:', error);
     
     // Carregar dados de fallback do localStorage
     loadDataFromLocalStorage();
+    
+    dbEventEmitter.emit(DatabaseEvents.SYNC_FAILED, { error, operation: 'loadAll' });
     return false;
   }
 }
 
-// Salvar todos os dados
 async function saveAllData() {
   console.log('💾 Salvando todos os dados no IndexedDB...');
   
   try {
+    dbEventEmitter.emit(DatabaseEvents.SYNC_STARTED, { operation: 'saveAll' });
+    
     // Salvar estações
     await Promise.all(gasData.map(station => 
       dbPut(STORES.STATIONS, station).catch(err => 
@@ -236,9 +367,12 @@ async function saveAllData() {
     ));
     
     console.log('✅ Dados salvos no IndexedDB');
+    
+    dbEventEmitter.emit(DatabaseEvents.SYNC_COMPLETED, { operation: 'saveAll' });
     return true;
   } catch (error) {
     console.error('❌ Erro ao salvar dados:', error);
+    dbEventEmitter.emit(DatabaseEvents.SYNC_FAILED, { error, operation: 'saveAll' });
     return false;
   }
 }
@@ -253,6 +387,8 @@ function syncWithLocalStorage() {
     localStorage.setItem('certifications', JSON.stringify(certifications));
     localStorage.setItem('priceHistory', JSON.stringify(priceHistory));
     console.log('🔄 Dados sincronizados com localStorage');
+    
+    dbEventEmitter.emit(DatabaseEvents.DATA_CHANGED, { operation: 'localStorageSync' });
   } catch (error) {
     console.error('❌ Erro ao sincronizar com localStorage:', error);
   }
@@ -280,3 +416,38 @@ async function initDatabaseAndLoad() {
     return false;
   }
 }
+
+// ========== API PÚBLICA DE EVENTOS ==========
+// Expõe o sistema de eventos para outros módulos que quiserem usar
+// MAS NÃO OBRIGA NINGUÉM A USAR - mantém compatibilidade com código existente
+const DatabaseAPI = {
+  // Funções originais (mantidas para compatibilidade)
+  initDatabaseAndLoad,
+  loadAllData,
+  saveAllData,
+  syncWithLocalStorage,
+  dbAdd,
+  dbPut,
+  dbGet,
+  dbGetAll,
+  dbDelete,
+  
+  // Sistema de eventos (nova funcionalidade)
+  on: (event, callback) => dbEventEmitter.on(event, callback),
+  off: (event, callback) => dbEventEmitter.off(event, callback),
+  once: (event, callback) => dbEventEmitter.once(event, callback),
+  
+  // Constantes de eventos
+  EVENTS: DatabaseEvents
+};
+
+// Para compatibilidade com código existente, exporta funções globais
+window.initDatabaseAndLoad = initDatabaseAndLoad;
+window.loadAllData = loadAllData;
+window.saveAllData = saveAllData;
+window.dbPut = dbPut;
+window.dbGet = dbGet;
+window.dbGetAll = dbGetAll;
+
+// Exporta a API completa se outros módulos quiserem usar eventos
+window.DatabaseAPI = DatabaseAPI;

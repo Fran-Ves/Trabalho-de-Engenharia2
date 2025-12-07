@@ -1,6 +1,99 @@
 /* stations.js — render de postos, sugestões e confirmações de preço */
 let bestValueStations = [];
 
+
+if (typeof commentSystem === 'undefined') {
+    console.warn('⚠️ Sistema de comentários não carregado, usando fallback');
+    // Cria um fallback básico
+    let commentSystem;
+}
+
+function createStationPopupContent(station) {
+    
+    const cs= window.commentSystem || {
+        getAverageRating: () => ({ average: 0, count: 0 }),
+        getComments: () => [],
+        renderRatingSummary: () => '<div style="color:#666; font-size:11px;">Avaliações indisponíveis</div>',
+        renderCommentForm: (stationId) => `
+            <div style="text-align:center; padding:10px;">
+                <button onclick="showToast(\'Sistema de comentários carregando...\')" 
+                        style="background:#1976d2; color:white; border:none; padding:8px; border-radius:6px;">
+                    Carregando sistema de comentários...
+                </button>
+            </div>
+        `,
+        renderCommentsList: () => '<div style="color:#777; text-align:center;">Carregando comentários...</div>'
+    };
+    const ratingInfo = cs.getAverageRating(station.id);
+    const comments = cs.getComments(station.id);
+
+    
+    let html = `
+        <div style="max-width: 280px; min-width: 250px;">
+          <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px; color: #1976d2;">
+            ${escapeHtml(station.name)} ${station.isBestValue ? '⭐' : ''}
+          </div>
+          
+          <div style="font-size:11px; color:#666; margin-bottom:8px;">
+            <div style="margin-bottom: 4px;">
+              Confiabilidade: <b>${station.trustScore || 5.0}/10</b>
+              ${station.isVerified ? '<span class="verified-badge"><i class="fa-solid fa-check-circle"></i> Verificado</span>' : ''}
+            </div>
+            
+            <!-- RESUMO DE AVALIAÇÕES -->
+            ${cs.renderRatingSummary(station.id)}
+          </div>
+          
+          <div style="border-top:1px solid #eee; padding-top:8px; margin-bottom: 12px;">
+            <div><strong>Preços:</strong></div>
+            <div style="display: flex; justify-content: space-between; margin-top: 4px;">
+              <span>Gasolina:</span>
+              <span><b>R$ ${station.prices?.gas || '--'}</b></span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span>Etanol:</span>
+              <span><b>R$ ${station.prices?.etanol || '--'}</b></span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+              <span>Diesel:</span>
+              <span><b>R$ ${station.prices?.diesel || '--'}</b></span>
+            </div>
+            
+            <div style="font-size: 10px; color: #1976d2; text-align: center;">
+              <span style="cursor: pointer; margin: 0 4px;" onclick="promptNewPrice('${station.id}', 'gas')">↻ Gasolina</span> |
+              <span style="cursor: pointer; margin: 0 4px;" onclick="promptNewPrice('${station.id}', 'etanol')">↻ Etanol</span> |
+              <span style="cursor: pointer; margin: 0 4px;" onclick="promptNewPrice('${station.id}', 'diesel')">↻ Diesel</span>
+            </div>
+          </div>
+          
+          ${getPendingChangesHtml(station)}
+          
+          <!-- COMENTÁRIOS E AVALIAÇÕES -->
+          <div style="border-top: 1px solid #eee; padding-top: 12px;">
+            <h4 style="font-size: 13px; margin: 0 0 8px 0; color: #333; display: flex; align-items: center;">
+              <i class="fas fa-comments" style="margin-right: 6px; color: #1976d2;"></i>
+              Avaliações e Comentários
+              <span style="margin-left: auto; font-size: 11px; color: #777;">${comments.length}</span>
+            </h4>
+            
+            <!-- FORMULÁRIO DE COMENTÁRIO -->
+            ${cs.renderCommentForm(station.id)}
+            
+            <!-- LISTA DE COMENTÁRIOS -->
+            <div style="margin-top: 16px;">
+              ${cs.renderCommentsList(station.id)}
+            </div>
+          </div>
+          
+          <div style="margin-top:8px; text-align:center; border-top: 1px solid #eee; padding-top: 8px;">
+            <small style="color:#1976d2; cursor:pointer;" onclick="promptNewPrice('${station.id}')">Sugerir Novo Preço</small>
+          </div>
+        </div>
+      `;
+      
+      return html;
+  }
+
 function renderAllMarkers() {
     if (!gasMarkers) return;
     gasMarkers.clearLayers();
@@ -26,41 +119,20 @@ function renderAllMarkers() {
 
         marker.stationId = station.id;
 
-        let pendingHtml = '';
-        if (station.pendingChanges && station.pendingChanges.length > 0) {
-            pendingHtml = getPendingChangesHtml(station);
-        }
-
-        const popupContent = `
-            <div style="font-weight: bold; font-size: 14px; margin-bottom: 4px;">
-                ${escapeHtml(station.name)} ${station.isBestValue ? '⭐' : ''}
-            </div>
-            <div style="font-size:11px; color:#666; margin-bottom:8px;">
-                Confiabilidade: <b>${station.trustScore || 5.0}/10</b>
-                ${station.isVerified ? '<span class="verified-badge"><i class="fa-solid fa-check-circle"></i> Verificado</span>' : ''}
-            </div>
-            <div style="border-top:1px solid #eee; padding-top:4px;">
-                <div>Gasolina: <b>R$ ${station.prices?.gas || '--'}</b> 
-                    <small style="color:#1976d2; cursor:pointer;" onclick="promptNewPrice('${station.id}', 'gas')">↻</small>
-                </div>
-                <div>Etanol: <b>R$ ${station.prices?.etanol || '--'}</b>
-                    <small style="color:#1976d2; cursor:pointer;" onclick="promptNewPrice('${station.id}', 'etanol')">↻</small>
-                </div>
-                <div>Diesel: <b>R$ ${station.prices?.diesel || '--'}</b>
-                    <small style="color:#1976d2; cursor:pointer;" onclick="promptNewPrice('${station.id}', 'diesel')">↻</small>
-                </div>
-            </div>
-
-            ${pendingHtml}
-
-            <div style="margin-top:8px; text-align:center;">
-                <small style="color:#1976d2; cursor:pointer;" onclick="promptNewPrice('${station.id}')">Sugerir Novo Preço</small>
-            </div>
-        `;
+        // Usar a nova função para criar conteúdo do popup
+        const popupContent = createStationPopupContent(station);
         marker.bindPopup(popupContent);
+        
+        // Evento quando o popup é aberto
+        marker.on('popupopen', function() {
+          // Inicializar as estrelas interativas
+          setTimeout(() => {
+            initStarRating(station.id);
+          }, 100);
+        });
     });
 
-    console.log('📍 Marcadores renderizados');
+    console.log('📍 Marcadores renderizados com sistema de comentários');
 }
 
 function getPendingChangesHtml(station) {
@@ -303,6 +375,10 @@ function findStationByName(query) {
     // 3. Retorna null se múltiplos resultados ou nenhum
     return null;
 }
+
+function refreshStationComments(stationId) {
+    updateStationPopupComments(stationId);
+  }
 
 // Adiciona ao escopo global
 window.findStationByName = findStationByName;

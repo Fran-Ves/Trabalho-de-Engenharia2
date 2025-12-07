@@ -2,19 +2,34 @@ document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Iniciando aplicação...');
     
     try {
-        // Inicializar banco de dados primeiro
-        if (typeof initDatabaseAndLoad === 'function') {
-            await initDatabaseAndLoad();
-        } else {
-            // Fallback: carregar do localStorage
-            loadData();
-        }
+      // Inicializar banco de dados primeiro
+      if (typeof initDatabaseAndLoad === 'function') {
+        await initDatabaseAndLoad();
         
-        setupUI();
-        initMap();
-        attachEventListeners();
+        // Carregar comentários se a função existir
+        if (typeof loadAllComments === 'function') {
+          await loadAllComments();
+          console.log(`📝 Comentários carregados: ${Object.keys(stationComments).length} postos com comentários`);
+        }
+      } else {
+        // Fallback: carregar do localStorage
+        loadData();
+      }
+      
+      // Inicializar sistema de comentários
+      if (typeof commentSystem !== 'undefined' && stationComments) {
+        console.log('✅ Sistema de comentários inicializado');
+      }
+      
+      setupUI();
+      initMap();
+      attachEventListeners();
+      
+      console.log('✅ Aplicação inicializada com sucesso');
         
         console.log('✅ Aplicação inicializada com sucesso');
+        console.log(`📝 Sistema de comentários: ${Object.keys(stationComments).length} postos com comentários`);
+        
     } catch (error) {
         console.error('❌ Erro na inicialização:', error);
         
@@ -31,6 +46,25 @@ document.addEventListener('DOMContentLoaded', async function() {
         }
     }
 });
+
+function testCommentSystem() {
+    if (gasData.length > 0) {
+        const stationId = gasData[0].id;
+        console.log('🧪 Testando sistema de comentários para posto:', gasData[0].name);
+        
+        // Adicionar comentário de teste
+        commentSystem.addComment(
+            stationId,
+            'test_user',
+            'Usuário Teste',
+            5,
+            'Excelente posto! Atendimento rápido e preços justos. Recomendo!'
+        ).then(() => {
+            console.log('✅ Comentário de teste adicionado');
+            showToast('✅ Comentário de teste adicionado!');
+        });
+    }
+}
 
 function handleSearch() {
     const searchInput = document.getElementById('searchInput');
@@ -109,12 +143,7 @@ function attachEventListeners() {
     if (topbarBackBtn) {
         topbarBackBtn.addEventListener('click', function() {
             console.log('↩️ Botão Voltar clicado');
-            if (previousScreenId) {
-                showScreen(previousScreenId);
-            } else {
-                hideAllScreens();
-                showScreen('main');
-            }
+            goBack();
         });
     }
     
@@ -210,14 +239,23 @@ function attachEventListeners() {
 
     if (btnLoginUser) {
         btnLoginUser.addEventListener('click', function() {
+            console.log('👤 Botão Usuário clicado');
             switchLoginForm('user');
         });
     }
 
-    if (btnLoginPosto) {
+   if (btnLoginPosto) {
         btnLoginPosto.addEventListener('click', function() {
+            console.log('⛽ Botão Posto clicado');
             switchLoginForm('posto');
         });
+    }
+
+    if (document.getElementById('screenLoginUser') && 
+        !document.getElementById('screenLoginUser').classList.contains('hidden')) {
+        setTimeout(() => {
+            initLoginForm();
+        }, 100);
     }
 
     const sortByPrice = document.getElementById('sortByPrice');
@@ -318,6 +356,13 @@ function attachEventListeners() {
     if (searchBtn) {
         searchBtn.addEventListener('click', handleSearch);
     }
+
+    // const editProfileBtn = document.getElementById('editProfileBtn');
+    // if (editProfileBtn) {
+    //     editProfileBtn.addEventListener('click', function() {
+    //         showEditProfileScreen();
+    //     });
+    // }
     
     // Adiciona listeners para elementos dinâmicos
     document.addEventListener('click', function(e) {
@@ -358,3 +403,8 @@ window.promptNewPrice = promptNewPrice;
 window.confirmPrice = confirmPrice;
 window.showStationOptions = showStationOptions;
 window.handleSearch = handleSearch;
+window.showEditProfileScreen = showEditProfileScreen;
+window.saveProfileChanges = saveProfileChanges;
+window.changeProfilePhoto = changeProfilePhoto;
+window.handleProfilePhotoChange = handleProfilePhotoChange;
+window.startLocationSelectionForEdit = startLocationSelectionForEdit;

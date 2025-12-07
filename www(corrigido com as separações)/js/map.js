@@ -1,6 +1,7 @@
 let map;
 let gasMarkers;
-let control = null; // Inicializar como null
+let control = null;
+let controlInitialized = false;
 let userLocationMarker;
 let userAccuracyCircle;
 let isTrackingLocation = false;
@@ -26,6 +27,10 @@ function initMap() {
     }).addTo(map);
     
     gasMarkers = L.layerGroup().addTo(map);
+
+    if (mapContainer) {
+        mapContainer.setAttribute('tabindex', '-1');
+    }
     
     // Inicializar o controle de rotas
     initRoutingControl();
@@ -72,6 +77,7 @@ function initMap() {
     
     addSampleStations();
     renderAllMarkers();
+    window.map = map;
     
     console.log('✅ Mapa inicializado');
 }
@@ -80,29 +86,111 @@ function handleLocationSelection(e) {
     if (!selectingLocationForPosto) {
         return;
     }
-    
-    console.log('📍 Localização selecionada para posto:', e.latlng);
-    
-    // Chamar função de finalização - garantir que existe
-    if (typeof finishLocationSelection === 'function') {
-        finishLocationSelection(e.latlng);
-    } else {
-        console.error('❌ finishLocationSelection não está definida');
-        // Fallback básico
-        selectingLocationForPosto = false;
-        selectedLocationForPosto = e.latlng;
-        
-        showToast('Localização selecionada! Volte para tela de cadastro.');
-        
-        // Tentar voltar para tela de cadastro
-        setTimeout(() => {
-            const screen = document.getElementById('screenRegisterPosto');
-            if (screen) {
-                screen.classList.remove('hidden');
-                screen.setAttribute('aria-hidden', 'false');
-            }
-        }, 500);
+
+    console.log('📍 Localização selecionada:', e.latlng);
+
+    // Criar objeto padronizado
+    const selected = {
+        lat: e.latlng.lat,
+        lng: e.latlng.lng,
+        coords: [e.latlng.lat, e.latlng.lng]
+    };
+
+    // Limpar marcador temporário anterior
+    if (tempMarker) {
+        try { map.removeLayer(tempMarker); } catch (err) { /* ignore */ }
+        tempMarker = null;
     }
+
+    // Adicionar novo marcador temporário
+    tempMarker = L.marker(e.latlng, {
+        icon: L.divIcon({
+            className: 'temp-marker',
+            html: '<i class="fa-solid fa-map-pin" style="color: #e53935; font-size: 24px;"></i>',
+            iconSize: [24, 24],
+            iconAnchor: [12, 24]
+        })
+    }).addTo(map);
+
+    // VERIFICAÇÃO CORRETA DO CONTEXTO
+    const isEditMode = window.locationSelectionContext === 'edit' || 
+                     (currentUser && currentUser.type === 'posto' && 
+                      !window.fromCadastro);
+
+    console.log('🔍 Modo detectado:', isEditMode ? 'EDIÇÃO' : 'CADASTRO');
+    console.log('🔍 Contexto:', window.locationSelectionContext);
+    console.log('🔍 fromCadastro:', window.fromCadastro);
+    console.log('🔍 currentUser:', currentUser);
+    
+    if (isEditMode) {
+        // MODO EDIÇÃO
+        window.tempSelectedLocation = selected;
+        
+        // Atualizar o campo na tela de edição
+        const locInfo = document.getElementById('editPostoLocInfo');
+        if (locInfo) {
+            locInfo.textContent = `Lat: ${selected.lat.toFixed(5)}, Lng: ${selected.lng.toFixed(5)}`;
+            locInfo.style.color = '#1976d2';
+            locInfo.style.fontWeight = 'bold';
+            locInfo.classList.add('selected');
+            locInfo.dataset.lat = selected.lat;
+            locInfo.dataset.lng = selected.lng;
+        }
+        
+        // Remover botões específicos da edição
+        removeEditLocationButtons();
+        
+        // Limpar variável de controle
+        selectingLocationForPosto = false;
+        window.locationSelectionContext = null;
+        window.fromCadastro = false;
+        
+        // Voltar para tela de edição
+        setTimeout(() => {
+            showScreen('screenEditProfile');
+            showToast('✅ Localização selecionada! Clique em Salvar para aplicar.');
+        }, 300);
+    } else {
+        // MODO CADASTRO
+        selectedLocationForPosto = e.latlng;
+        window.fromCadastro = true;
+        
+        // Atualizar o campo na tela de cadastro
+        const locInfo = document.getElementById('locInfoScreen');
+        if (locInfo) {
+            locInfo.textContent = `Lat: ${selected.lat.toFixed(5)}, Lng: ${selected.lng.toFixed(5)}`;
+            locInfo.style.color = '#1976d2';
+            locInfo.style.fontWeight = 'bold';
+            locInfo.classList.add('selected');
+        }
+        
+        // Remover botões específicos do cadastro
+        removeCadastroLocationButtons();
+        
+        // Limpar variável de controle
+        selectingLocationForPosto = false;
+        window.locationSelectionContext = null;
+        
+        // Voltar para tela de cadastro
+        setTimeout(() => {
+            showScreen('screenRegisterPosto');
+            showToast('✅ Localização selecionada! Complete os outros dados.');
+        }, 300);
+    }
+}
+
+// Funções auxiliares para remover botões
+function removeEditLocationButtons() {
+    const backBtn = document.getElementById('backToEditProfileBtn');
+    if (backBtn) backBtn.remove();
+    
+    const cancelBtn = document.getElementById('cancelLocationSelectionBtn');
+    if (cancelBtn) cancelBtn.remove();
+}
+
+function removeCadastroLocationButtons() {
+    const backBtn = document.getElementById('backToCadastroBtn');
+    if (backBtn) backBtn.remove();
 }
 
 function initRoutingControl() {
@@ -131,19 +219,24 @@ function initRoutingControl() {
             addWaypoints: false,
             draggableWaypoints: false
         }).addTo(map);
-
-        // Anexar evento de forma segura
-        if (control && control.on) {
-            control.on('routesfound', handleRoutesFound);
-            console.log('✅ Controle de rotas inicializado');
-            return control;
+        
+        // VERIFICAÇÃO SEGURA: só adiciona event listener se controle foi criado
+        if (control) {
+            control.on('routesfound', function(e) {
+                console.log('🛣️ Rota encontrada no controle');
+                handleRoutesFound(e);
+            });
+            console.log('✅ Controle de rotas inicializado com listener');
+        } else {
+            console.warn('⚠️ Controle de rotas não foi criado');
         }
+        
+        return control;
     } catch (error) {
         console.error('❌ Erro ao inicializar controle de rotas:', error);
-        showToast('Erro ao inicializar sistema de rotas');
+        showToast('⚠️ Sistema de rotas temporariamente indisponível');
         return null;
     }
-    return null;
 }
 
 function stopCurrentRoute() {
@@ -384,13 +477,14 @@ function findNearbyStations() {
         showToast('📍 Nenhum posto encontrado próximo a você');
     }
 }
-
-map.on('click', function(e) {
-    if (selectingWaypoints) {
-        handleRoutePointSelection(e);
-    } else if (selectingLocationForPosto) {
-        handleLocationSelection(e);
-    }
+document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(() => {
+        if (isControlValid()) {
+            console.log('✅ Controle de rotas verificado e pronto');
+        } else {
+            console.warn('⚠️ Controle de rotas não está disponível');
+        }
+    }, 1000);
 });
 
 function navigateToStation(stationId, keepMode = true) {
@@ -429,6 +523,33 @@ function navigateToStation(stationId, keepMode = true) {
     showToast(`📍 Navegando para: ${station.name}`);
 }
 
+function cleanupLocationSelection() {
+    // Remover listener
+    if (map._editingLocationListener) {
+        map.off('click', onMapClickForEditing);
+        map._editingLocationListener = false;
+    }
+    
+    // Remover marcador
+    if (tempMarker) {
+        map.removeLayer(tempMarker);
+        tempMarker = null;
+    }
+    
+    // Resetar variáveis
+    selectingLocationForPosto = false;
+    window.locationSelectionContext = null;
+    window.fromCadastro = false;
+}
+
+function isControlValid() {
+    return control && typeof control === 'object' && typeof control.on === 'function';
+}
+
 // Torna a função global
 window.navigateToStation = navigateToStation;
-
+window.handleLocationSelection = handleLocationSelection;
+window.cleanupLocationSelection = cleanupLocationSelection;
+if (typeof window.handleLocationSelection === 'undefined') {
+    window.handleLocationSelection = handleLocationSelection;
+}

@@ -1,36 +1,36 @@
 /* auth.js — registro, login e controle de sessão */
 async function saveUser() {
-  const name = document.getElementById('userNameScreen')?.value;
-  const email = document.getElementById('userEmailScreen')?.value;
-  const password = document.getElementById('userPassScreen')?.value;
-
-  if (!name || !email || !password) {
-    showToast('❌ Preencha todos os campos');
-    return;
+    const name = document.getElementById('userNameScreen')?.value;
+    const email = document.getElementById('userEmailScreen')?.value;
+    const password = document.getElementById('userPassScreen')?.value;
+  
+    if (!name || !email || !password) {
+      showToast('❌ Preencha todos os campos');
+      return;
+    }
+  
+    const newUser = { 
+      id: 'user_' + Date.now(), 
+      name, 
+      email, 
+      password, 
+      type: 'user' 
+    };
+    
+    // Adicionar ao array local
+    users.push(newUser);
+    
+    // Adicionar ao IndexedDB se disponível
+    if (typeof dbPut === 'function') {
+      await dbPut('users', newUser);
+    }
+    
+    await saveData();
+    showToast('✅ Usuário cadastrado com sucesso!');
+    goToMainScreen();
   }
 
-  const newUser = { 
-    id: 'user_' + Date.now(), 
-    name, 
-    email, 
-    password, 
-    type: 'user' 
-  };
-  
-  // Adicionar ao array local
-  users.push(newUser);
-  
-  // Adicionar ao IndexedDB se disponível
-  if (typeof dbPut === 'function') {
-    await dbPut('users', newUser);
-  }
-  
-  await saveData();
-  showToast('✅ Usuário cadastrado com sucesso!');
-  hideScreen('screenRegisterUser');
-}
-
-async function savePosto() {
+  async function savePosto() {
     const name = document.getElementById('postoNameScreen')?.value;
     const cnpj = document.getElementById('postoCnpjScreen')?.value;
     const password = document.getElementById('postoPassScreen')?.value;
@@ -78,7 +78,7 @@ async function savePosto() {
     await saveData();
     renderAllMarkers();
     showToast('✅ Posto cadastrado! Agora você pode fazer login.');
-    hideScreen('screenRegisterPosto');
+    goToMainScreen();
     
     // Limpar variáveis de seleção
     selectingLocationForPosto = false;
@@ -118,34 +118,89 @@ function handleLogin() {
     if (foundEntity) {
         currentUser = foundEntity;
         if (!currentUser.type) currentUser.type = foundEntity.cnpj ? 'posto' : 'user';
+        
+        // Sincronizar dados se for posto
+        if (currentUser.type === 'posto') {
+            setTimeout(() => {
+                syncPostoWithCurrentUser();
+            }, 100);
+        }
+        
         saveData();
         updateProfileIcon();
         const welcomeName = currentUser.type === 'posto' ? currentUser.name : (currentUser.name || '').split(' ')[0];
         showToast(`✅ Bem-vindo, ${welcomeName || 'Usuário'}!`);
-        hideScreen('screenLoginUser');
-
-        if (currentUser.type === 'posto') {
-            setTimeout(() => {
-                if (confirm("Deseja atualizar os preços do seu posto agora?")) {
-                    promptNewPrice(currentUser.id);
-                }
-            }, 500);
-        }
+        goToMainScreen();
     } else {
         showToast('❌ Credenciais inválidas');
     }
 }
 
-function switchLoginForm(isUser) {
+function switchLoginForm(formType) {
     const userFields = document.getElementById('loginUserFields');
     const postoFields = document.getElementById('loginPostoFields');
+    const btnLoginUser = document.getElementById('btnLoginUser');
+    const btnLoginPosto = document.getElementById('btnLoginPosto');
 
-    if (!userFields || !postoFields) return;
-    if (isUser) {
+    if (!userFields || !postoFields || !btnLoginUser || !btnLoginPosto) return;
+
+    // Determinar qual formulário mostrar
+    const isUserForm = formType === 'user';
+    
+    if (isUserForm) {
+        // Mostrar formulário de usuário
         userFields.classList.remove('hidden');
         postoFields.classList.add('hidden');
+        
+        // Atualizar botões de escolha
+        btnLoginUser.classList.add('active');
+        btnLoginPosto.classList.remove('active');
+        
+        // Limpar campos do formulário de posto (opcional)
+        document.getElementById('loginPostoNameScreen').value = '';
+        document.getElementById('loginPostoCnpjScreen').value = '';
     } else {
+        // Mostrar formulário de posto
         userFields.classList.add('hidden');
         postoFields.classList.remove('hidden');
+        
+        // Atualizar botões de escolha
+        btnLoginUser.classList.remove('active');
+        btnLoginPosto.classList.add('active');
+        
+        // Limpar campos do formulário de usuário (opcional)
+        document.getElementById('loginEmailScreen').value = '';
+        document.getElementById('loginPassScreen').value = '';
+    }
+    
+    console.log(`🔄 Formulário alterado para: ${isUserForm ? 'Usuário' : 'Posto'}`);
+}
+
+function initLoginScreen() {
+    // Garantir que o formulário de usuário esteja ativo por padrão
+    switchLoginForm('user');
+    
+    // Adicionar event listeners para os botões de escolha
+    const btnLoginUser = document.getElementById('btnLoginUser');
+    const btnLoginPosto = document.getElementById('btnLoginPosto');
+    
+    if (btnLoginUser) {
+        btnLoginUser.addEventListener('click', function() {
+            switchLoginForm('user');
+        });
+    }
+    
+    if (btnLoginPosto) {
+        btnLoginPosto.addEventListener('click', function() {
+            switchLoginForm('posto');
+        });
     }
 }
+
+// Inicializar quando a tela de login for mostrada
+window.addEventListener('DOMContentLoaded', function() {
+    // Verificar se estamos na tela de login e inicializar
+    if (document.getElementById('screenLoginUser')) {
+        initLoginScreen();
+    }
+});

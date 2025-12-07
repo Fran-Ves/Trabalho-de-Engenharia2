@@ -71,7 +71,7 @@
 
   <!-- Main: mapa (tela principal) -->
   <main id="main">
-    <div id="map" role="application" aria-label="Mapa de postos"></div>
+    <div id="map" role="application" aria-label="Mapa de postos" tabindex="-1"></div>
     <!-- Sidebar lateral: ações e informações da rota -->
     <aside id="sidebar" class="sidebar hidden" aria-hidden="true">
       <div class="sidebar-header">
@@ -253,6 +253,68 @@
     </div>
   </section>
 
+  <!-- TELA: Editar Perfil -->
+  <div id="screenEditProfile" class="screen hidden" aria-hidden="true">
+    <div class="screen-inner">
+      <div class="screen-header">
+        <button class="back-btn" onclick="showScreen('screenProfile')">
+          <i class="fa-solid fa-arrow-left"></i> Voltar
+        </button>
+        <h2>Editar Perfil</h2>
+      </div>
+      
+      <div id="editProfileContent" class="form-screen">
+        <!-- Conteúdo será carregado dinamicamente aqui -->
+        <div class="loading-spinner">
+          <i class="fa-solid fa-spinner fa-spin"></i> Carregando...
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TELA: Remover Conta (full screen) -->
+  <section id="screenDeleteAccount" class="screen hidden" aria-hidden="true">
+      <div class="screen-inner">
+          <div class="screen-header">
+              <button class="back-btn" onclick="showScreen('screenProfile')">
+                  <i class="fa-solid fa-arrow-left"></i> Voltar
+              </button>
+              <h2>Remover Conta</h2>
+          </div>
+          
+          <div class="form-screen">
+              <div class="warning-box">
+                  <i class="fa-solid fa-triangle-exclamation" style="color: #f44336; font-size: 48px; margin-bottom: 20px;"></i>
+                  <h3 style="color: #f44336;">Atenção!</h3>
+                  <p>Esta ação é <strong>irreversível</strong>. Todos os seus dados serão permanentemente excluídos:</p>
+                  <ul style="text-align: left; margin: 15px 0;">
+                      <li>Seu perfil de usuário</li>
+                      ${currentUser && currentUser.type === 'posto' ? 
+                          '<li>Seu posto e todos os dados associados</li>' : 
+                          '<li>Seu histórico e comentários</li>'}
+                      <li>Todos os seus dados de login</li>
+                  </ul>
+                  <p><strong>Esta ação não pode ser desfeita!</strong></p>
+              </div>
+              
+              <div class="form-group">
+                  <label for="deleteAccountPassword">Digite sua senha para confirmar:</label>
+                  <input type="password" id="deleteAccountPassword" 
+                        placeholder="Sua senha atual" class="form-input">
+                  <small class="muted">Digite sua senha atual para confirmar a exclusão</small>
+              </div>
+              
+              <div class="form-actions">
+                  <button class="btn-danger" onclick="confirmDeleteAccount()">
+                      <i class="fa-solid fa-trash"></i> Confirmar Exclusão
+                  </button>
+                  <button class="btn-secondary" onclick="showScreen('screenProfile')">
+                      Cancelar
+                  </button>
+              </div>
+          </div>
+      </div>
+  </section>
 
   <!-- TELA: Modo motorista -->
   <section id="driverModePanel" class="driver-mode-panel hidden">
@@ -294,6 +356,8 @@
   </section>
   <div id="quickMenu" class="hidden"></div>
 
+
+  
   <button id="openDenounceBtn" class="hidden"></button>
   <button id="confirmPricesBtn" class="hidden"></button>
   <button id="editPricesBtn" class="hidden"></button>
@@ -312,9 +376,11 @@
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
   <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
   <!-- App script (carrega por último após dependências) -->
   <!-- utilidades e dados (globais) -->
   <script src="js/database.js"></script> <!-- inicia o banco de dados -->
+  <script src="js/sql-db.js"></script> <!-- sistema SQL orientado a eventos -->
   <script src="js/data.js"></script> <!-- gerencia os dados -->
   <script src="js/utils.js"></script> <!-- utilitários de outras funções -->
   <script src="js/ui.js"></script> <!-- gerenciamento de interface -->
@@ -323,6 +389,8 @@
   <script src="js/stations.js"></script> <!-- gerenciamento de estações -->
   <script src="js/route.js"></script> <!-- gerenciamento de rotas -->
   <script src="js/drivermode.js"></script> <!-- gerenciamento do modo motorista -->
+  <script src="js/comments.js"></script> <!-- sistema de comentários (DEPOIS de stations.js) -->
+  <script src="js/main-integration.js"></script> <!-- integra o SQL DB ao main.js -->
   <script src="js/main.js"></script> <!-- script principal com a conexão entre os scripts -->
   <!-- SW -->
   <script>

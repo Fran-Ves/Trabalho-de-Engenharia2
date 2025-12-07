@@ -298,7 +298,7 @@ function handleRoutesFound(e) {
     }
 }
 
-function handleLocationSelection(e) {
+function handleRouteLocationSelection(e) {
     if (tempMarker) {
         map.removeLayer(tempMarker);
     }
@@ -316,3 +316,4 @@ function handleLocationSelection(e) {
 }
 
 window.handleRoutesFound = handleRoutesFound;
+window.handleRouteLocationSelection = handleRouteLocationSelection;

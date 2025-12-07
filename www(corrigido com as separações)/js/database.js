@@ -1,14 +1,15 @@
 /* database.js — IndexedDB para armazenamento local COM ARQUITETURA ORIENTADA A EVENTOS */
 
 const DB_NAME = 'PostosAppDB';
-const DB_VERSION = 3;
+const DB_VERSION = 5; 
 
 const STORES = {
   STATIONS: 'stations',
   USERS: 'users',
   PRICE_HISTORY: 'price_history',
   PENDING_PRICES: 'pending_prices',
-  CERTIFICATIONS: 'certifications'
+  CERTIFICATIONS: 'certifications',
+  COMMENTS: 'comments' 
 };
 
 // ========== SISTEMA DE EVENTOS ==========
@@ -112,6 +113,7 @@ function initDatabase() {
     
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
+      const transaction = event.target.transaction;
       
       if (!db.objectStoreNames.contains(STORES.STATIONS)) {
         const store = db.createObjectStore(STORES.STATIONS, { keyPath: 'id' });
@@ -134,6 +136,21 @@ function initDatabase() {
         store.createIndex('station_id', 'station_id', { unique: false });
         store.createIndex('date', 'date', { unique: false });
       }
+
+      if (!db.objectStoreNames.contains(STORES.COMMENTS)) {
+          console.log('📝 Criando store de comentários...');
+          const store = db.createObjectStore(STORES.COMMENTS, { 
+              keyPath: 'id',
+              autoIncrement: true 
+          });
+          store.createIndex('station_id', 'station_id', { unique: false });
+          store.createIndex('user_id', 'user_id', { unique: false });
+          store.createIndex('date', 'date', { unique: false });
+          store.createIndex('rating', 'rating', { unique: false });
+      }
+      
+      console.log(`🔄 Banco criado/atualizado v${event.oldVersion} → v${DB_VERSION}`);
+    
       
       if (!db.objectStoreNames.contains(STORES.PENDING_PRICES)) {
         db.createObjectStore(STORES.PENDING_PRICES, { keyPath: 'id' });
@@ -215,6 +232,34 @@ function dbPut(storeName, data) {
   });
 }
 
+function dbAddComment(comment) {
+  ensureDBReady();
+  return new Promise((resolve, reject) => {
+    dbEventEmitter.emit(DatabaseEvents.SYNC_STARTED, { storeName: STORES.COMMENTS, data: comment, operation: 'add' });
+    
+    const transaction = db.transaction([STORES.COMMENTS], 'readwrite');
+    const store = transaction.objectStore(STORES.COMMENTS);
+    const request = store.add(comment);
+    
+    request.onsuccess = () => {
+      resolve(request.result);
+      dbEventEmitter.emit(DatabaseEvents.DATA_CHANGED, { 
+        storeName: STORES.COMMENTS, 
+        data: comment, 
+        operation: 'add',
+        result: request.result 
+      });
+      dbEventEmitter.emit(DatabaseEvents.SYNC_COMPLETED, { storeName: STORES.COMMENTS, operation: 'add' });
+    };
+    
+    request.onerror = (e) => {
+      console.error(`❌ Erro ao adicionar comentário:`, e.target.error);
+      dbEventEmitter.emit(DatabaseEvents.SYNC_FAILED, { storeName: STORES.COMMENTS, error: e.target.error, operation: 'add' });
+      reject(e.target.error);
+    };
+  });
+}
+
 function dbGet(storeName, key) {
   ensureDBReady();
   return new Promise((resolve, reject) => {
@@ -225,6 +270,27 @@ function dbGet(storeName, key) {
     request.onsuccess = () => resolve(request.result);
     request.onerror = (e) => reject(e.target.error);
   });
+}
+
+function dbGetCommentsByStation(stationId) {
+  ensureDBReady();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction([STORES.COMMENTS], 'readonly');
+    const store = transaction.objectStore(STORES.COMMENTS);
+    const index = store.index('station_id');
+    const request = index.getAll(stationId);
+    
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = (e) => {
+      console.error(`❌ Erro ao buscar comentários:`, e.target.error);
+      reject(e.target.error);
+    };
+  });
+}
+
+function dbGetAllComments() {
+  ensureDBReady();
+  return dbGetAll(STORES.COMMENTS);
 }
 
 function dbGetAll(storeName, indexName = null, query = null) {
@@ -333,6 +399,8 @@ async function loadAllData() {
     
     dbEventEmitter.emit(DatabaseEvents.DATA_CHANGED, { operation: 'loadAll' });
     dbEventEmitter.emit(DatabaseEvents.SYNC_COMPLETED, { operation: 'loadAll' });
+
+    await cleanupOrphanedData();
     
     return true;
   } catch (error) {
@@ -344,6 +412,42 @@ async function loadAllData() {
     dbEventEmitter.emit(DatabaseEvents.SYNC_FAILED, { error, operation: 'loadAll' });
     return false;
   }
+}
+
+async function cleanupOrphanedData() {
+    try {
+        console.log('🧹 Verificando dados órfãos...');
+        
+        // Verificar usuários sem posto correspondente (para postos)
+        const orphanedUsers = [];
+        
+        for (const user of users) {
+            if (user.type === 'posto') {
+                const stationExists = gasData.some(s => s.id === user.id);
+                if (!stationExists) {
+                    orphanedUsers.push(user.id);
+                    console.log(`⚠️ Encontrado usuário posto órfão: ${user.name} (${user.id})`);
+                }
+            }
+        }
+        
+        // Remover usuários órfãos
+        if (orphanedUsers.length > 0) {
+            users = users.filter(u => !orphanedUsers.includes(u.id));
+            
+            // Remover do IndexedDB
+            if (typeof dbDelete === 'function') {
+                for (const userId of orphanedUsers) {
+                    await dbDelete('users', userId).catch(() => {});
+                }
+            }
+            
+            console.log(`✅ Removidos ${orphanedUsers.length} usuários órfãos`);
+        }
+        
+    } catch (error) {
+        console.error('❌ Erro ao limpar dados órfãos:', error);
+    }
 }
 
 async function saveAllData() {
@@ -417,6 +521,27 @@ async function initDatabaseAndLoad() {
   }
 }
 
+function clearDatabase() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    
+    request.onsuccess = () => {
+      console.log('✅ Banco de dados apagado com sucesso');
+      resolve();
+    };
+    
+    request.onerror = (e) => {
+      console.error('❌ Erro ao apagar banco de dados:', e.target.error);
+      reject(e.target.error);
+    };
+    
+    request.onblocked = () => {
+      console.warn('⚠️ Banco de dados bloqueado para exclusão');
+      reject(new Error('Banco de dados bloqueado'));
+    };
+  });
+}
+
 // ========== API PÚBLICA DE EVENTOS ==========
 // Expõe o sistema de eventos para outros módulos que quiserem usar
 // MAS NÃO OBRIGA NINGUÉM A USAR - mantém compatibilidade com código existente
@@ -431,6 +556,9 @@ const DatabaseAPI = {
   dbGet,
   dbGetAll,
   dbDelete,
+  dbAddComment,
+  dbGetCommentsByStation,
+  dbGetAllComments,
   
   // Sistema de eventos (nova funcionalidade)
   on: (event, callback) => dbEventEmitter.on(event, callback),
@@ -448,6 +576,10 @@ window.saveAllData = saveAllData;
 window.dbPut = dbPut;
 window.dbGet = dbGet;
 window.dbGetAll = dbGetAll;
+window.dbAddComment = dbAddComment;
+window.dbGetCommentsByStation = dbGetCommentsByStation;
+window.dbGetAllComments = dbGetAllComments;
+window.clearDatabase = clearDatabase;
 
 // Exporta a API completa se outros módulos quiserem usar eventos
 window.DatabaseAPI = DatabaseAPI;

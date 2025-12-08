@@ -1,3 +1,4 @@
+
 // Integração do SQL Database no main.js existente
 
 document.addEventListener('DOMContentLoaded', async function() {

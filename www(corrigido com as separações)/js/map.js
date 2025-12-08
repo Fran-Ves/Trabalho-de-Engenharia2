@@ -120,7 +120,6 @@ function handleLocationSelection(e) {
     console.log('🔍 Modo detectado:', isEditMode ? 'EDIÇÃO' : 'CADASTRO');
     console.log('🔍 Contexto:', window.locationSelectionContext);
     console.log('🔍 fromCadastro:', window.fromCadastro);
-    console.log('🔍 currentUser:', currentUser);
     
     if (isEditMode) {
         // MODO EDIÇÃO
@@ -137,13 +136,19 @@ function handleLocationSelection(e) {
             locInfo.dataset.lng = selected.lng;
         }
         
-        // Remover botões específicos da edição
+        // Remover botões específicos da edição - usando a função do escopo global
         removeEditLocationButtons();
         
         // Limpar variável de controle
         selectingLocationForPosto = false;
         window.locationSelectionContext = null;
         window.fromCadastro = false;
+        
+        // Remover listener do mapa
+        if (map._editingLocationListener) {
+            map.off('click', onMapClickForEditing);
+            map._editingLocationListener = false;
+        }
         
         // Voltar para tela de edição
         setTimeout(() => {
@@ -170,6 +175,12 @@ function handleLocationSelection(e) {
         // Limpar variável de controle
         selectingLocationForPosto = false;
         window.locationSelectionContext = null;
+        
+        // Remover listener do mapa
+        if (map._editingLocationListener) {
+            map.off('click', onMapClickForEditing);
+            map._editingLocationListener = false;
+        }
         
         // Voltar para tela de cadastro
         setTimeout(() => {
@@ -546,10 +557,53 @@ function isControlValid() {
     return control && typeof control === 'object' && typeof control.on === 'function';
 }
 
+function removeEditLocationButtons() {
+    console.log('🗑️ Removendo botões de edição...');
+    
+    const backBtn = document.getElementById('backToEditProfileBtn');
+    const cancelBtn = document.getElementById('cancelLocationSelectionBtn');
+    
+    if (backBtn) {
+        backBtn.remove();
+        console.log('✅ backToEditProfileBtn removido');
+    } else {
+        console.log('⚠️ backToEditProfileBtn não encontrado');
+    }
+    
+    if (cancelBtn) {
+        cancelBtn.remove();
+        console.log('✅ cancelLocationSelectionBtn removido');
+    } else {
+        console.log('⚠️ cancelLocationSelectionBtn não encontrado');
+    }
+}
+
+// Adicione também para cadastro
+function removeCadastroLocationButtons() {
+    console.log('🗑️ Removendo botões de cadastro...');
+    
+    const backBtn = document.getElementById('backToCadastroBtn');
+    
+    if (backBtn) {
+        backBtn.remove();
+        console.log('✅ backToCadastroBtn removido');
+    } else {
+        console.log('⚠️ backToCadastroBtn não encontrado');
+    }
+}
+
 // Torna a função global
 window.navigateToStation = navigateToStation;
 window.handleLocationSelection = handleLocationSelection;
 window.cleanupLocationSelection = cleanupLocationSelection;
+if (typeof window.handleLocationSelection === 'undefined') {
+    window.handleLocationSelection = handleLocationSelection;
+}
+window.removeEditLocationButtons = removeEditLocationButtons;
+window.removeCadastroLocationButtons = removeCadastroLocationButtons;
+window.handleLocationSelection = handleLocationSelection;
+window.cleanupLocationSelection = cleanupLocationSelection;
+
 if (typeof window.handleLocationSelection === 'undefined') {
     window.handleLocationSelection = handleLocationSelection;
 }

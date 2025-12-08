@@ -141,11 +141,11 @@ function attachEventListeners() {
     const locationBtn = document.getElementById('locationBtn');
     
     if (topbarBackBtn) {
-        topbarBackBtn.addEventListener('click', function() {
-            console.log('↩️ Botão Voltar clicado');
-            goBack();
-        });
-    }
+    topbarBackBtn.addEventListener('click', function() {
+        console.log('↩️ Botão Voltar clicado');
+        goBack();
+    });
+}
     
     if (profileBtn) {
         profileBtn.addEventListener('click', function() {

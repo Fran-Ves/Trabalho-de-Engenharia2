@@ -33,9 +33,15 @@ function showScreen(screenId) {
     manageFocusWhenSwitchingScreens(currentScreenId, screenId);
     const screen = document.getElementById(screenId);
 
+    // Verificar se estamos em modo de seleção de localização
+    const isLocationSelectionMode = selectingLocationForPosto || 
+                                   window.locationSelectionContext === 'cadastro' || 
+                                   window.locationSelectionContext === 'edit';
+
+    // Se estiver em modo de seleção, não executar o auto-save
     if (window.preventAutoSaveUser) {
-    console.log("⛔ Auto-save de usuário bloqueado");
-    } else {
+        console.log("⛔ Auto-save de usuário bloqueado");
+    } else if (!isLocationSelectionMode) {
         saveUserChanges(); // Mas deixe de chamar automaticamente
     }
     
@@ -76,7 +82,6 @@ function showScreen(screenId) {
         // GERENCIAR VISIBILIDADE DOS ELEMENTOS DO MAPA
         const homeQuick = document.getElementById('homeQuick');
         const sidebar = document.getElementById('sidebar');
-        const routePanel = document.querySelector('.route-panel');
         const driverPanel = document.getElementById('driverModePanel');
         const quickMenu = document.getElementById('quickMenu');
         const searchResults = document.querySelector('.search-results');
@@ -84,11 +89,15 @@ function showScreen(screenId) {
 
         if (screenId === 'main') {
             // MOSTRAR elementos do mapa (apenas quando na tela principal)
-            if (homeQuick) homeQuick.classList.remove('hidden');
+            if (homeQuick && !isLocationSelectionMode) {
+                // Só mostrar o homeQuick se NÃO estiver em modo de seleção
+                homeQuick.classList.remove('hidden');
+            }
+            
             document.body.classList.add('map-visible');
             
-            // Apenas mostrar sidebar se houver rota ativa
-            if (routeFoundStations && routeFoundStations.length > 0) {
+            // Apenas mostrar sidebar se houver rota ativa E não estiver em modo seleção
+            if (routeFoundStations && routeFoundStations.length > 0 && !isLocationSelectionMode) {
                 if (sidebar) sidebar.classList.remove('hidden');
                 adjustHomeButtonsForSidebar(true);
             } else {
@@ -99,7 +108,6 @@ function showScreen(screenId) {
             // ESCONDER todos os elementos do mapa quando em outra tela
             if (homeQuick) homeQuick.classList.add('hidden');
             if (sidebar) sidebar.classList.add('hidden');
-            if (routePanel) routePanel.classList.add('hidden');
             if (driverPanel) driverPanel.classList.add('hidden');
             if (quickMenu) quickMenu.classList.add('hidden');
             if (searchResults) searchResults.classList.add('hidden');
@@ -114,6 +122,21 @@ function showScreen(screenId) {
             setTimeout(() => {
                 initLoginForm();
             }, 50);
+        }
+        
+        // Se estiver em modo de seleção, garantir que o mapa está visível e pronto
+        if (isLocationSelectionMode && screenId === 'main' && map) {
+            setTimeout(() => {
+                // Garantir que o mapa seja redimensionado e visível
+                map.invalidateSize();
+                
+                // Centralizar na localização do usuário se disponível
+                if (userLocationMarker) {
+                    const userCoords = userLocationMarker.getLatLng();
+                    map.setView(userCoords, 15);
+                    console.log('📍 Mapa centralizado na localização do usuário:', userCoords);
+                }
+            }, 100);
         }
         
         // Adicionar: Focar no primeiro elemento interativo da tela
@@ -317,34 +340,48 @@ function startLocationSelectionForPosto() {
     
     // Mostrar o mapa principal
     window.preventAutoSaveUser = true;
-    showScreen('main');
     
-    // Esconder elementos do mapa
-    hideAllMapElements();
-    
-    // Criar botão de voltar para cadastro
-    createBackToCadastroButton();
-    
-    // Limpar marcador temporário anterior
-    if (tempMarker) {
-        map.removeLayer(tempMarker);
-        tempMarker = null;
-    }
-    
-    // Configurar listener do mapa
-    if (map && !map._editingLocationListener) {
-        map.on('click', onMapClickForEditing);
-        map._editingLocationListener = true;
-    }
-    
-    // Centralizar na localização do usuário se disponível
-    if (userLocationMarker) {
-        const userCoords = userLocationMarker.getLatLng();
-        map.setView(userCoords, 15);
-        console.log('📍 Centralizado na localização do usuário:', userCoords);
-    }
-    
-    showToast('📍 Clique no mapa para selecionar a localização do posto');
+    // Usar setTimeout para garantir que a transição ocorra
+    setTimeout(() => {
+        showScreen('main');
+        
+        // Pequeno delay para garantir que o DOM foi atualizado
+        setTimeout(() => {
+            // Esconder elementos do mapa que podem atrapalhar
+            hideAllMapElements();
+            
+            // Criar botão de voltar para cadastro
+            createBackToCadastroButton();
+            
+            // Limpar marcador temporário anterior
+            if (tempMarker) {
+                try {
+                    map.removeLayer(tempMarker);
+                } catch (err) {}
+                tempMarker = null;
+            }
+            
+            // Configurar listener do mapa
+            if (map && !map._editingLocationListener) {
+                map.on('click', onMapClickForEditing);
+                map._editingLocationListener = true;
+            }
+            
+            // Centralizar na localização do usuário se disponível
+            if (userLocationMarker) {
+                const userCoords = userLocationMarker.getLatLng();
+                map.setView(userCoords, 15);
+                console.log('📍 Centralizado na localização do usuário:', userCoords);
+            }
+            
+            // Forçar redimensionamento do mapa
+            if (map) {
+                map.invalidateSize();
+            }
+            
+            showToast('📍 Clique no mapa para selecionar a localização do posto');
+        }, 50);
+    }, 10);
 }
 
 function onMapClickForEditing(e) {
@@ -546,6 +583,8 @@ function createBackToCadastroButton() {
 }
 
 function hideAllMapElements() {
+    console.log('🗺️ Escondendo elementos do mapa...');
+    
     const elementsToHide = [
         'homeQuick',
         'sidebar',
@@ -556,12 +595,16 @@ function hideAllMapElements() {
     
     elementsToHide.forEach(id => {
         const element = document.getElementById(id);
-        if (element) element.classList.add('hidden');
+        if (element) {
+            element.classList.add('hidden');
+            console.log(`✅ Escondido: ${id}`);
+        }
     });
     
     // Esconder elementos por classe
     document.querySelectorAll('.route-panel, .search-results').forEach(el => {
         el.classList.add('hidden');
+        console.log(`✅ Escondido elemento por classe: ${el.className}`);
     });
     
     adjustHomeButtonsForSidebar(false);
@@ -1074,8 +1117,11 @@ function startLocationSelectionForEdit() {
 }
 
 function createBackToEditProfileButton() {
-    const existingBtn = document.getElementById('backToEditProfileBtn');
-    if (existingBtn) existingBtn.remove();
+    const existingBackBtn = document.getElementById('backToEditProfileBtn');
+    const existingCancelBtn = document.getElementById('cancelLocationSelectionBtn');
+    
+    if (existingBackBtn) existingBackBtn.remove();
+    if (existingCancelBtn) existingCancelBtn.remove();
 
     const backBtn = document.createElement('button');
     backBtn.id = 'backToEditProfileBtn';
@@ -1094,6 +1140,9 @@ function createBackToEditProfileButton() {
         box-shadow: 0 2px 10px rgba(0,0,0,0.3);
         cursor: pointer;
     `;
+
+    backBtn.id = 'backToEditProfileBtn';
+    
 
     backBtn.addEventListener('click', function() {
         // Limpar seleção SEM usar cancelLocationSelection (que remove ambos)
@@ -1549,19 +1598,16 @@ function cancelLocationSelection() {
 function clearLocationSelection() {
     console.log('🧹 Limpando seleção de localização...');
     
-    selectingLocationForPosto = false;
-    window.tempSelectedLocation = null;
-    window.locationSelectionContext = null;
-    window.fromCadastro = false;
-    
-    if (tempMarker) {
-        try {
-            map.removeLayer(tempMarker);
-        } catch (e) {}
-        tempMarker = null;
+    // Usar as funções do mapa para remover botões específicos
+    if (typeof removeEditLocationButtons === 'function') {
+        removeEditLocationButtons();
     }
     
-    // Remover botões específicos
+    if (typeof removeCadastroLocationButtons === 'function') {
+        removeCadastroLocationButtons();
+    }
+    
+    // Também remover por ID para garantir
     const buttonsToRemove = [
         'backToEditProfileBtn',
         'cancelLocationSelectionBtn',
@@ -1575,6 +1621,18 @@ function clearLocationSelection() {
             console.log(`✅ Removido botão: ${id}`);
         }
     });
+    
+    selectingLocationForPosto = false;
+    window.tempSelectedLocation = null;
+    window.locationSelectionContext = null;
+    window.fromCadastro = false;
+    
+    if (tempMarker) {
+        try {
+            map.removeLayer(tempMarker);
+        } catch (e) {}
+        tempMarker = null;
+    }
     
     // Remover listener do mapa
     if (map && map._editingLocationListener) {
@@ -1744,3 +1802,6 @@ window.resetNavigationStack = resetNavigationStack;
 window.goToMainScreen = goToMainScreen;
 window.showDeleteAccountScreen = showDeleteAccountScreen;
 window.confirmDeleteAccount = confirmDeleteAccount;
+window.cancelLocationSelection = cancelLocationSelection;
+window.viewCurrentLocationOnMap = viewCurrentLocationOnMap;
+window.getSelectedLocationForPosto = getSelectedLocationForPosto;

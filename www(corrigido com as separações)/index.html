@@ -377,27 +377,37 @@
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
   <script src="https://unpkg.com/@turf/turf/turf.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage.js"></script>
+  <!-- <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script> -->
   <!-- App script (carrega por último após dependências) -->
   <!-- utilidades e dados (globais) -->
-  <script src="js/firebase-config.js"></script> <!-- configuração do Firebase -->
-  <script src="js/database.js"></script> <!-- inicia o banco de dados -->
-  <script src="js/sql-db.js"></script> <!-- sistema SQL orientado a eventos -->
-  <script src="js/firebase-sync.js"></script> <!-- sincroniza IndexedDB com Firebase -->
-  <script src="js/data.js"></script> <!-- gerencia os dados -->
-  <script src="js/utils.js"></script> <!-- utilitários de outras funções -->
-  <script src="js/ui.js"></script> <!-- gerenciamento de interface -->
-  <script src="js/map.js"></script> <!-- gerenciamento do mapa -->
-  <script src="js/auth.js"></script>  <!-- lida com autenticação -->
-  <script src="js/stations.js"></script> <!-- gerenciamento de estações -->
-  <script src="js/route.js"></script> <!-- gerenciamento de rotas -->
-  <script src="js/drivermode.js"></script> <!-- gerenciamento do modo motorista -->
-  <script src="js/comments.js"></script> <!-- sistema de comentários (DEPOIS de stations.js) -->
-  <script src="js/main-integration.js"></script> <!-- integra o SQL DB ao main.js -->
-  <script src="js/main.js"></script> <!-- script principal com a conexão entre os scripts -->
+  <!-- 3. Sistema SQLite (OBRIGATÓRIO) -->
+  <script src="js/sql-db.js"></script>
+  
+  <!-- 4. Dados e utilitários -->
+  <script src="js/data-sqlite.js"></script>
+  <script src="js/utils.js"></script>
+  
+  <!-- 5. Interface -->
+  <script src="js/ui.js"></script>
+  
+  <!-- 6. Mapa -->
+  <script src="js/map.js"></script>
+  
+  <!-- 7. Funcionalidades -->
+  <script src="js/auth-sqlite.js"></script>
+  <script src="js/stations-sqlite.js"></script>
+  <script src="js/route.js"></script>
+  <script src="js/drivermode.js"></script>
+  <script src="js/comments-sqlite.js"></script>
+  
+  <!-- 8. Principal -->
+  <script src="js/main-sqlite.js"></script>
+  
+  <!-- 9. Migração (opcional) -->
+  <!-- <script src="js/migrate-indexeddb-to-sqlite.js"></script> -->
   <!-- SW -->
   <script>
     if ('serviceWorker' in navigator) {

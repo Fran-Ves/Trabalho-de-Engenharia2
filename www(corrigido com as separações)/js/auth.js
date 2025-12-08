@@ -28,6 +28,11 @@ async function saveUser() {
     await saveData();
     showToast('✅ Usuário cadastrado com sucesso!');
     goToMainScreen();
+    if (firebaseSync && firebaseSync.currentFirebaseUser) {
+        setTimeout(() => {
+            firebaseSync.syncStationToFirebase(newPosto);
+        }, 1000);
+    }
   }
 
   async function savePosto() {
@@ -79,6 +84,12 @@ async function saveUser() {
     renderAllMarkers();
     showToast('✅ Posto cadastrado! Agora você pode fazer login.');
     goToMainScreen();
+
+    if (firebaseSync && firebaseSync.currentFirebaseUser) {
+        setTimeout(() => {
+            firebaseSync.syncStationToFirebase(newPosto);
+        }, 1000);
+    }
     
     // Limpar variáveis de seleção
     selectingLocationForPosto = false;

@@ -1,67 +1,51 @@
 
 // Integração do SQL Database no main.js existente
 
+// Modifique a inicialização no main-integration.js
 document.addEventListener('DOMContentLoaded', async function() {
     console.log('🚀 Iniciando aplicação...');
     
     try {
-      // Opção de banco de dados: 'indexeddb' ou 'sqldb'
-      const DB_TYPE = 'sqldb'; // Mude para 'indexeddb' para usar o antigo
-      
-      if (DB_TYPE === 'sqldb' && typeof initSQLDatabase === 'function') {
-        console.log('🗃️ Usando SQL Database...');
-        
-        // Inicializa SQL Database
+        // 1. Inicializar SQLite local (sempre)
+        console.log('🗃️ Inicializando SQLite local...');
         await initSQLDatabase();
-        
-        // Carrega dados do SQL
         await loadDataFromSQL();
         
-        console.log(`📝 Comentários carregados: ${Object.keys(stationComments).length} postos com comentários`);
+        // 2. Tentar inicializar Firebase (opcional)
+        console.log('🔥 Tentando conectar ao Firebase...');
+        const firebaseAvailable = isFirebaseAvailable();
         
-      } else {
-        // Fallback para IndexedDB
-        console.log('🗃️ Usando IndexedDB (fallback)...');
-        
-        if (typeof initDatabaseAndLoad === 'function') {
-          await initDatabaseAndLoad();
-          
-          if (typeof loadAllComments === 'function') {
-            await loadAllComments();
-            console.log(`📝 Comentários carregados: ${Object.keys(stationComments).length} postos com comentários`);
-          }
+        if (firebaseAvailable) {
+            await initFirebaseSync();
+            console.log('✅ Firebase conectado - Modo online/offline ativado');
         } else {
-          // Fallback: carregar do localStorage
-          loadData();
+            console.log('⚠️ Firebase não disponível - Modo offline apenas');
         }
-      }
-      
-      // Inicializar sistema de comentários
-      if (typeof commentSystem !== 'undefined' && stationComments) {
-        console.log('✅ Sistema de comentários inicializado');
-      }
-      
-      setupUI();
-      initMap();
-      attachEventListeners();
-      
-      console.log('✅ Aplicação inicializada com sucesso');
-      console.log(`📝 Sistema de comentários: ${Object.keys(stationComments).length} postos com comentários`);
-      
+        
+        // 3. Carregar sistema de comentários
+        console.log(`📝 Comentários carregados: ${Object.keys(stationComments).length} postos`);
+        
+        // 4. Inicializar interface
+        setupUI();
+        initMap();
+        attachEventListeners();
+        
+        console.log('✅ Aplicação inicializada com sucesso');
+        
+        // 5. Sincronizar dados se Firebase estiver disponível
+        if (firebaseSync) {
+            setTimeout(() => {
+                firebaseSync.syncAllData();
+            }, 3000);
+        }
+        
     } catch (error) {
         console.error('❌ Erro na inicialização:', error);
-        
-        // Tentar fallback completo
-        try {
-            loadData();
-            setupUI();
-            initMap();
-            attachEventListeners();
-            showToast('⚠️ Modo offline ativado (banco de dados local)');
-        } catch (fallbackError) {
-            console.error('❌ Falha no fallback:', fallbackError);
-            showToast('❌ Erro crítico ao inicializar aplicação');
-        }
+        // Fallback: usar apenas SQLite
+        setupUI();
+        initMap();
+        attachEventListeners();
+        showToast('⚠️ Modo offline ativado');
     }
 });
 

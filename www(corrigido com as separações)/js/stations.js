@@ -243,6 +243,11 @@ async function handlePriceSuggestion(stationId, fuelType, price) {
   await saveData();
   renderAllMarkers();
   showToast('✅ Sugestão enviada — aguarde confirmações da comunidade');
+  if (firebaseSync && firebaseSync.currentFirebaseUser) {
+    setTimeout(() => {
+        firebaseSync.syncAllData();
+    }, 1000);
+  }
 }
 
 function applyPriceChange(station, fuelType, price) {

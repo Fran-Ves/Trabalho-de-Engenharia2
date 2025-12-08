@@ -1,16 +1,12 @@
-/* stations.js — render de postos, sugestões e confirmações de preço */
+/* stations-sqlite.js — estações usando SQLite */
+console.log('⛽ Inicializando sistema de estações SQLite...');
+
 let bestValueStations = [];
 
-
+// Fallback para sistema de comentários
 if (typeof commentSystem === 'undefined') {
     console.warn('⚠️ Sistema de comentários não carregado, usando fallback');
-    // Cria um fallback básico
-    let commentSystem;
-}
-
-function createStationPopupContent(station) {
-    
-    const cs= window.commentSystem || {
+    window.commentSystem = {
         getAverageRating: () => ({ average: 0, count: 0 }),
         getComments: () => [],
         renderRatingSummary: () => '<div style="color:#666; font-size:11px;">Avaliações indisponíveis</div>',
@@ -24,9 +20,12 @@ function createStationPopupContent(station) {
         `,
         renderCommentsList: () => '<div style="color:#777; text-align:center;">Carregando comentários...</div>'
     };
-    const ratingInfo = cs.getAverageRating(station.id);
-    const comments = cs.getComments(station.id);
+}
 
+function createStationPopupContent(station) {
+    const cs = window.commentSystem || {};
+    const ratingInfo = cs.getAverageRating ? cs.getAverageRating(station.id) : { average: 0, count: 0 };
+    const comments = cs.getComments ? cs.getComments(station.id) : [];
     
     let html = `
         <div style="max-width: 280px; min-width: 250px;">
@@ -41,7 +40,7 @@ function createStationPopupContent(station) {
             </div>
             
             <!-- RESUMO DE AVALIAÇÕES -->
-            ${cs.renderRatingSummary(station.id)}
+            ${cs.renderRatingSummary ? cs.renderRatingSummary(station.id) : ''}
           </div>
           
           <div style="border-top:1px solid #eee; padding-top:8px; margin-bottom: 12px;">
@@ -77,11 +76,11 @@ function createStationPopupContent(station) {
             </h4>
             
             <!-- FORMULÁRIO DE COMENTÁRIO -->
-            ${cs.renderCommentForm(station.id)}
+            ${cs.renderCommentForm ? cs.renderCommentForm(station.id) : ''}
             
             <!-- LISTA DE COMENTÁRIOS -->
             <div style="margin-top: 16px;">
-              ${cs.renderCommentsList(station.id)}
+              ${cs.renderCommentsList ? cs.renderCommentsList(station.id) : ''}
             </div>
           </div>
           
@@ -92,7 +91,7 @@ function createStationPopupContent(station) {
       `;
       
       return html;
-  }
+}
 
 function renderAllMarkers() {
     if (!gasMarkers) return;
@@ -118,25 +117,22 @@ function renderAllMarkers() {
         }).addTo(gasMarkers);
 
         marker.stationId = station.id;
-
-        // Usar a nova função para criar conteúdo do popup
         const popupContent = createStationPopupContent(station);
         marker.bindPopup(popupContent);
         
-        // Evento quando o popup é aberto
         marker.on('popupopen', function() {
-          // Inicializar as estrelas interativas
           setTimeout(() => {
             initStarRating(station.id);
           }, 100);
         });
     });
 
-    console.log('📍 Marcadores renderizados com sistema de comentários');
+    console.log('📍 Marcadores renderizados');
 }
 
 function getPendingChangesHtml(station) {
     if (!station.pendingChanges || station.pendingChanges.length === 0) return '';
+    
     return station.pendingChanges.map((change, index) => `
         <div class="pending-price-alert">
             <i class="fa-solid fa-clock"></i> 
@@ -178,6 +174,12 @@ window.promptNewPrice = function(stationId, fuelType = null) {
         station.prices[fuelType] = parseFloat(newPrice).toFixed(2);
         station.isVerified = true;
         station.trustScore = 10;
+        
+        // Atualizar no SQLite
+        if (window.sqlDB && sqlDB.initialized) {
+            sqlDB.updateStation(station);
+        }
+        
         saveData();
         renderAllMarkers();
         showToast("✅ Preço atualizado com sucesso!");
@@ -188,73 +190,96 @@ window.promptNewPrice = function(stationId, fuelType = null) {
 };
 
 async function confirmPrice(stationId, changeIndex) {
-  const station = gasData.find(s => s.id === stationId);
-  if (!station || !station.pendingChanges || !station.pendingChanges[changeIndex]) return;
-  
-  const change = station.pendingChanges[changeIndex];
-  const currentUserId = currentUser?.id || `anon_${getAnonId()}`;
+    const station = gasData.find(s => s.id === stationId);
+    if (!station || !station.pendingChanges || !station.pendingChanges[changeIndex]) return;
+    
+    const change = station.pendingChanges[changeIndex];
+    const currentUserId = currentUser?.id || `anon_${getAnonId()}`;
 
-  if (change.users.includes(currentUserId)) {
-    showToast("❌ Você já confirmou este preço");
-    return;
-  }
+    if (change.users.includes(currentUserId)) {
+        showToast("❌ Você já confirmou este preço");
+        return;
+    }
 
-  change.votes += 1;
-  change.users.push(currentUserId);
-  station.trustScore = Math.min(10, (parseFloat(station.trustScore) || 5) + 0.5);
-  showToast(`👍 Confirmação adicionada! Confiabilidade: ${station.trustScore}`);
+    change.votes += 1;
+    change.users.push(currentUserId);
+    station.trustScore = Math.min(10, (parseFloat(station.trustScore) || 5) + 0.5);
+    showToast(`👍 Confirmação adicionada! Confiabilidade: ${station.trustScore}`);
 
-  if (change.votes >= 3) {
-    applyPriceChange(station, change.type, change.price);
-    station.pendingChanges.splice(changeIndex, 1);
-    station.isVerified = true;
-    showToast("✅ Preço confirmado pela comunidade!");
-  }
+    if (change.votes >= 3) {
+        applyPriceChange(station, change.type, change.price);
+        station.pendingChanges.splice(changeIndex, 1);
+        station.isVerified = true;
+        showToast("✅ Preço confirmado pela comunidade!");
+        
+        // Sincronizar com Firebase se disponível
+        if (window.firebaseSync && firebaseSync.currentFirebaseUser) {
+            firebaseSync.syncStationToFirebase(station);
+        }
+    }
 
-  // Atualizar no IndexedDB
-  if (typeof dbPut === 'function') {
-    await dbPut('stations', station);
-  }
-  
-  await saveData();
-  renderAllMarkers();
+    // Atualizar no SQLite
+    if (window.sqlDB && sqlDB.initialized) {
+        await sqlDB.updateStation(station);
+    }
+    
+    await saveData();
+    renderAllMarkers();
 }
 
 async function handlePriceSuggestion(stationId, fuelType, price) {
-  const station = gasData.find(s => s.id === stationId);
-  if (!station) return;
-  
-  if (!station.pendingChanges) station.pendingChanges = [];
+    const station = gasData.find(s => s.id === stationId);
+    if (!station) return;
+    
+    if (!station.pendingChanges) station.pendingChanges = [];
 
-  const change = { 
-    type: fuelType, 
-    price: parseFloat(price).toFixed(2), 
-    votes: 1, 
-    users: [currentUser?.id || getAnonId()] 
-  };
-  
-  station.pendingChanges.unshift(change);
-  
-  // Atualizar no IndexedDB se disponível
-  if (typeof dbPut === 'function') {
-    await dbPut('stations', station);
-  }
-  
-  await saveData();
-  renderAllMarkers();
-  showToast('✅ Sugestão enviada — aguarde confirmações da comunidade');
-  if (firebaseSync && firebaseSync.currentFirebaseUser) {
-    setTimeout(() => {
-        firebaseSync.syncAllData();
-    }, 1000);
-  }
+    const change = {
+        type: fuelType,
+        price: parseFloat(price).toFixed(2),
+        votes: 1,
+        users: [currentUser?.id || getAnonId()]
+    };
+    
+    station.pendingChanges.unshift(change);
+    
+    // Atualizar no SQLite
+    if (window.sqlDB && sqlDB.initialized) {
+        await sqlDB.updateStation(station);
+    }
+    
+    await saveData();
+    renderAllMarkers();
+    showToast('✅ Sugestão enviada — aguarde confirmações da comunidade');
+    
+    // Sincronizar com Firebase se disponível
+    if (window.firebaseSync && firebaseSync.currentFirebaseUser) {
+        firebaseSync.syncStationToFirebase(station);
+    }
 }
 
 function applyPriceChange(station, fuelType, price) {
     if (!station.prices) station.prices = {};
     station.prices[fuelType] = parseFloat(price).toFixed(2);
+    
+    // Adicionar ao histórico
     if (!priceHistory[station.id]) priceHistory[station.id] = [];
-    priceHistory[station.id].push({ type: fuelType, price: parseFloat(price), date: Date.now() });
+    priceHistory[station.id].push({
+        type: fuelType,
+        price: parseFloat(price),
+        date: Date.now()
+    });
+    
+    // Salvar histórico no SQLite
+    if (window.sqlDB && sqlDB.initialized) {
+        sqlDB.addPriceHistory({
+            station_id: station.id,
+            type: fuelType,
+            price: parseFloat(price),
+            date: Date.now(),
+            user_id: currentUser?.id || 'anonymous'
+        });
+    }
+    
     saveData();
 }
 
@@ -305,7 +330,7 @@ function getAnonId() {
 
 function searchStations(query) {
     if (!query || query.trim() === '') {
-        renderAllMarkers(); // Mostra todos se busca vazia
+        renderAllMarkers();
         return [];
     }
     
@@ -318,11 +343,9 @@ function searchStations(query) {
         );
     });
     
-    // Foca no mapa no primeiro resultado
     if (filteredStations.length > 0 && filteredStations[0].coords) {
         map.setView(filteredStations[0].coords, 15);
         
-        // Destaca os resultados
         if (gasMarkers) {
             gasMarkers.clearLayers();
             
@@ -354,36 +377,38 @@ function searchStations(query) {
     return filteredStations;
 }
 
-window.searchStations = searchStations;
-
-/* stations.js - Adicione esta função */
-
 function findStationByName(query) {
     if (!query || query.trim() === '') return null;
     
     const searchTerm = query.toLowerCase().trim();
     
-    // 1. Busca por correspondência exata (ignorando case)
     const exactMatch = gasData.find(station => 
         station.name && station.name.toLowerCase() === searchTerm
     );
     if (exactMatch) return exactMatch;
     
-    // 2. Busca por correspondência parcial
     const partialMatches = gasData.filter(station => 
         station.name && station.name.toLowerCase().includes(searchTerm)
     );
     
-    // Retorna o primeiro resultado se houver apenas um
     if (partialMatches.length === 1) return partialMatches[0];
     
-    // 3. Retorna null se múltiplos resultados ou nenhum
     return null;
 }
 
 function refreshStationComments(stationId) {
-    updateStationPopupComments(stationId);
-  }
+    // Função para atualizar comentários no popup
+    if (typeof updateStationPopupComments === 'function') {
+        updateStationPopupComments(stationId);
+    }
+}
 
-// Adiciona ao escopo global
+// Exportar funções globais
+window.searchStations = searchStations;
 window.findStationByName = findStationByName;
+window.refreshStationComments = refreshStationComments;
+window.confirmPrice = confirmPrice;
+window.getFuelName = getFuelName;
+window.renderAllMarkers = renderAllMarkers;
+
+console.log('✅ Sistema de estações SQLite pronto');

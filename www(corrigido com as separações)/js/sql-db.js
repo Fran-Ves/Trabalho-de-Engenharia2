@@ -89,6 +89,9 @@ class SQLDatabase {
         `
       }
     };
+    this.autoSaveInterval = null;
+    this.autoSaveEnabled = false;
+    this.backupKey = 'sqlite_backup_auto';
   }
 
   // Sistema de eventos
@@ -131,20 +134,26 @@ class SQLDatabase {
       // Carrega SQL.js
       const SQL = await initSqlJs({
         locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
-      });
+        });
 
-      // Cria novo banco de dados
-      this.db = new SQL.Database();
+        // Cria novo banco de dados
+        this.db = new SQL.Database();
+        
+        // Cria tabelas
+        await this.createTables();
+        
+        this.initialized = true;
+        this.emit(SQLDB_EVENTS.DB_READY, this.db);
+        this.emit(SQLDB_EVENTS.SYNC_COMPLETED, { operation: 'init' });
       
-      // Cria tabelas
-      await this.createTables();
-      
-      this.initialized = true;
-      this.emit(SQLDB_EVENTS.DB_READY, this.db);
-      this.emit(SQLDB_EVENTS.SYNC_COMPLETED, { operation: 'init' });
-      
-      console.log('✅ Banco de dados SQL inicializado');
-      return this.db;
+        try {
+            await this.restoreFromLocalStorage(this.backupKey);
+            console.log('✅ Backup automático restaurado do localStorage');
+        } catch (error) {
+            console.log('ℹ️ Nenhum backup automático encontrado');
+        }
+        this.enableAutoSave(2);
+        return this.db;
     } catch (error) {
       console.error('❌ Erro ao inicializar banco SQL:', error);
       this.emit(SQLDB_EVENTS.DB_ERROR, error);
@@ -178,6 +187,30 @@ class SQLDatabase {
     console.log('✅ Tabelas SQL criadas');
   }
 
+    enableAutoSave(intervalMinutes = 5) {
+        if (this.autoSaveInterval) {
+            clearInterval(this.autoSaveInterval);
+        }
+        
+        this.autoSaveEnabled = true;
+        this.autoSaveInterval = setInterval(() => {
+            this.backupToLocalStorage(this.backupKey);
+        }, intervalMinutes * 60 * 1000);
+        
+        console.log(`✅ Autosalvamento habilitado a cada ${intervalMinutes} minutos`);
+    }
+
+    disableAutoSave() {
+        if (this.autoSaveInterval) {
+            clearInterval(this.autoSaveInterval);
+            this.autoSaveInterval = null;
+        }
+        this.autoSaveEnabled = false;
+        console.log('✅ Autosalvamento desabilitado');
+    }
+
+
+
   // Executa consulta SQL
   async query(sql, params = []) {
     this.emit(SQLDB_EVENTS.QUERY_EXECUTED, { sql, params });
@@ -207,22 +240,29 @@ class SQLDatabase {
   }
 
   // Executa comando SQL (INSERT, UPDATE, DELETE)
-  async run(sql, params = []) {
-    this.emit(SQLDB_EVENTS.QUERY_EXECUTED, { sql, params });
-    
-    try {
-      if (typeof params === 'object' && !Array.isArray(params)) {
-        params = Object.values(params);
-      }
-      
-      this.db.run(sql, params);
-      this.emit(SQLDB_EVENTS.DATA_CHANGED, { sql, params });
-      return true;
-    } catch (error) {
-      console.error('❌ Erro ao executar SQL:', error, sql, params);
-      throw error;
+    async run(sql, params = []) {
+        this.emit(SQLDB_EVENTS.QUERY_EXECUTED, { sql, params });
+        
+        try {
+            if (typeof params === 'object' && !Array.isArray(params)) {
+                params = Object.values(params);
+            }
+            
+            // Converter valores undefined para null ou string vazia
+            const safeParams = params.map(param => {
+                if (param === undefined) return null;
+                if (typeof param === 'object') return JSON.stringify(param);
+                return param;
+            });
+            
+            this.db.run(sql, safeParams);
+            this.emit(SQLDB_EVENTS.DATA_CHANGED, { sql, params: safeParams });
+            return true;
+        } catch (error) {
+            console.error('❌ Erro ao executar SQL:', error, sql, params);
+            throw error;
+        }
     }
-  }
 
   // ========== CRUD para Stations ==========
   async addStation(station) {
@@ -330,51 +370,52 @@ class SQLDatabase {
   }
 
   // ========== CRUD para Users ==========
-  async addUser(user) {
-    const sql = `
-      INSERT INTO users (id, name, email, password, cnpj, coords, type, photoUrl, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    
-    const params = [
-      user.id,
-      user.name,
-      user.email,
-      user.password,
-      user.cnpj,
-      JSON.stringify(user.coords || []),
-      user.type,
-      user.photoUrl,
-      Date.now(),
-      Date.now()
-    ];
-    
-    await this.run(sql, params);
-    return user;
-  }
+     async addUser(user) {
+        const sql = `
+        INSERT INTO users (id, name, email, password, cnpj, coords, type, photoUrl, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+        
+        const params = [
+            user.id,
+            user.name,
+            user.email && user.email.trim() !== '' ? user.email : null, // NULL para emails vazios
+            user.password || '',
+            user.cnpj && user.cnpj.trim() !== '' ? user.cnpj : null, // NULL para CNPJs vazios
+            JSON.stringify(user.coords || []),
+            user.type || 'user',
+            user.photoUrl || '',
+            Date.now(),
+            Date.now()
+        ];
+        
+        await this.run(sql, params);
+        return user;
+    }
 
-  async updateUser(user) {
-    const sql = `
-      UPDATE users 
-      SET name = ?, email = ?, password = ?, cnpj = ?, coords = ?, type = ?, photoUrl = ?, updated_at = ?
-      WHERE id = ?
-    `;
-    
-    const params = [
-      user.name,
-      user.email,
-      user.password,
-      user.cnpj,
-      JSON.stringify(user.coords || []),
-      user.type,
-      user.photoUrl,
-      Date.now(),
-      user.id
-    ];
-    
-    await this.run(sql, params);
-    return user;
-  }
+    async updateUser(user) {
+        const sql = `
+        UPDATE users 
+        SET name = ?, email = ?, password = ?, cnpj = ?, coords = ?, type = ?, photoUrl = ?, updated_at = ?
+        WHERE id = ?
+        `;
+        
+        const params = [
+        user.name,
+        user.email || '',
+        user.password || '',
+        user.cnpj || '',
+        JSON.stringify(user.coords || []),
+        user.type || 'user',
+        user.photoUrl || '',  // ← Garantir que não seja undefined
+        Date.now(),
+        user.id
+        ];
+        
+        await this.run(sql, params);
+        return user;
+    }
+
 
   async getUser(id) {
     const results = await this.query('SELECT * FROM users WHERE id = ?', [id]);
@@ -387,16 +428,35 @@ class SQLDatabase {
     };
   }
 
-  async getUserByEmail(email) {
-    const results = await this.query('SELECT * FROM users WHERE email = ?', [email]);
-    if (results.length === 0) return null;
-    
-    const user = results[0];
-    return {
-      ...user,
-      coords: JSON.parse(user.coords || '[]')
-    };
-  }
+    async getUserByEmail(email) {
+        if (!email || email.trim() === '') {
+            return null; // Não busca por emails vazios
+        }
+        
+        const results = await this.query('SELECT * FROM users WHERE email = ?', [email]);
+        if (results.length === 0) return null;
+        
+        const user = results[0];
+        return {
+            ...user,
+            coords: JSON.parse(user.coords || '[]')
+        };
+    }
+
+    async getUserByCNPJ(cnpj) {
+        if (!cnpj || cnpj.trim() === '') {
+            return null; // Não busca por CNPJs vazios
+        }
+
+        const results = await this.query('SELECT * FROM users WHERE cnpj = ?', [cnpj]);
+        if (results.length === 0) return null;
+
+        const user = results[0];
+        return {
+            ...user,
+            coords: JSON.parse(user.coords || '[]')
+        };
+    }
 
   async getAllUsers() {
     const results = await this.query('SELECT * FROM users');

@@ -1749,6 +1749,42 @@ async function confirmDeleteAccount() {
     }
 }
 
+function addBackupButton() {
+    const backupBtn = document.createElement('button');
+    backupBtn.id = 'backupDbBtn';
+    backupBtn.innerHTML = '<i class="fa-solid fa-download"></i> Backup SQLite';
+    backupBtn.style.cssText = `
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 1000;
+        background: #4CAF50;
+        color: white;
+        border: none;
+        padding: 10px 15px;
+        border-radius: 8px;
+        font-weight: bold;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        cursor: pointer;
+    `;
+    
+    backupBtn.addEventListener('click', async function() {
+        if (window.sqlDB && sqlDB.initialized) {
+            try {
+                await sqlDB.saveToFile(`postos-app-backup-${Date.now()}.sqlite`);
+                showToast('✅ Backup do banco de dados salvo!');
+            } catch (error) {
+                console.error('❌ Erro ao salvar backup:', error);
+                showToast('❌ Erro ao salvar backup');
+            }
+        } else {
+            showToast('❌ Banco de dados não inicializado');
+        }
+    });
+    
+    document.body.appendChild(backupBtn);
+}
+
 async function removeUserComments(userId) {
     try {
         if (!window.stationComments) return;
@@ -1783,207 +1819,103 @@ async function removeUserComments(userId) {
     }
 }
 
-function showSyncPanel() {
-    const panel = document.createElement('div');
-    panel.id = 'syncPanel';
-    panel.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 5px 30px rgba(0,0,0,0.3);
-        z-index: 2000;
-        width: 400px;
-        max-width: 90vw;
-    `;
+// function showSyncPanel() {
+//     const panel = document.createElement('div');
+//     panel.id = 'syncPanel';
+//     panel.style.cssText = `
+//         position: fixed;
+//         top: 50%;
+//         left: 50%;
+//         transform: translate(-50%, -50%);
+//         background: white;
+//         padding: 20px;
+//         border-radius: 10px;
+//         box-shadow: 0 5px 30px rgba(0,0,0,0.3);
+//         z-index: 2000;
+//         width: 400px;
+//         max-width: 90vw;
+//     `;
     
-    const syncStatus = firebaseSync ? firebaseSync.getSyncStatus() : {
-        isOnline: navigator.onLine,
-        isSyncing: false,
-        lastSync: 0,
-        firebaseUser: null
-    };
+//     // const syncStatus = firebaseSync ? firebaseSync.getSyncStatus() : {
+//     //     isOnline: navigator.onLine,
+//     //     isSyncing: false,
+//     //     lastSync: 0,
+//     //     firebaseUser: null
+//     // };
     
-    const lastSync = syncStatus.lastSync ? 
-        new Date(syncStatus.lastSync).toLocaleString() : 'Nunca';
+//     const lastSync = syncStatus.lastSync ? 
+//         new Date(syncStatus.lastSync).toLocaleString() : 'Nunca';
     
-    const userEmail = syncStatus.firebaseUser ? 
-        syncStatus.firebaseUser.email : 'Não logado';
+//     const userEmail = syncStatus.firebaseUser ? 
+//         syncStatus.firebaseUser.email : 'Não logado';
     
-    panel.innerHTML = `
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-            <h3 style="margin: 0; color: #1976d2;">Sincronização</h3>
-            <button onclick="document.getElementById('syncPanel').remove()" 
-                    style="background: none; border: none; font-size: 20px; cursor: pointer;">×</button>
-        </div>
+//     panel.innerHTML = `
+//         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+//             <h3 style="margin: 0; color: #1976d2;">Sincronização</h3>
+//             <button onclick="document.getElementById('syncPanel').remove()" 
+//                     style="background: none; border: none; font-size: 20px; cursor: pointer;">×</button>
+//         </div>
         
-        <div style="margin-bottom: 15px;">
-            <div class="status-item">
-                <span>Status:</span>
-                <span style="color: ${syncStatus.isOnline ? '#4CAF50' : '#f44336'}; font-weight: bold;">
-                    ${syncStatus.isOnline ? 'Online' : 'Offline'}
-                </span>
-            </div>
+//         <div style="margin-bottom: 15px;">
+//             <div class="status-item">
+//                 <span>Status:</span>
+//                 <span style="color: ${syncStatus.isOnline ? '#4CAF50' : '#f44336'}; font-weight: bold;">
+//                     ${syncStatus.isOnline ? 'Online' : 'Offline'}
+//                 </span>
+//             </div>
             
-            <div class="status-item">
-                <span>Firebase:</span>
-                <span style="color: ${firebaseSync ? '#4CAF50' : '#ff9800'};">
-                    ${firebaseSync ? 'Conectado' : 'Não disponível'}
-                </span>
-            </div>
+//             <div class="status-item">
+//                 <span>Firebase:</span>
+//                 <span style="color: ${firebaseSync ? '#4CAF50' : '#ff9800'};">
+//                     ${firebaseSync ? 'Conectado' : 'Não disponível'}
+//                 </span>
+//             </div>
             
-            <div class="status-item">
-                <span>Usuário:</span>
-                <span>${userEmail}</span>
-            </div>
+//             <div class="status-item">
+//                 <span>Usuário:</span>
+//                 <span>${userEmail}</span>
+//             </div>
             
-            <div class="status-item">
-                <span>Última sincronização:</span>
-                <span>${lastSync}</span>
-            </div>
+//             <div class="status-item">
+//                 <span>Última sincronização:</span>
+//                 <span>${lastSync}</span>
+//             </div>
             
-            <div class="status-item">
-                <span>Itens pendentes:</span>
-                <span>${syncStatus.pendingItems || 0}</span>
-            </div>
-        </div>
+//             <div class="status-item">
+//                 <span>Itens pendentes:</span>
+//                 <span>${syncStatus.pendingItems || 0}</span>
+//             </div>
+//         </div>
         
-        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
-            <button onclick="manualSync()" 
-                    style="width: 100%; padding: 10px; margin: 5px 0; background: #1976d2; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                <i class="fa-solid fa-sync"></i> Sincronizar Agora
-            </button>
+//         <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee;">
+//             <button onclick="manualSync()" 
+//                     style="width: 100%; padding: 10px; margin: 5px 0; background: #1976d2; color: white; border: none; border-radius: 5px; cursor: pointer;">
+//                 <i class="fa-solid fa-sync"></i> Sincronizar Agora
+//             </button>
             
-            <button onclick="firebaseSync.backupToFirebase()" 
-                    style="width: 100%; padding: 10px; margin: 5px 0; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                <i class="fa-solid fa-cloud-upload"></i> Fazer Backup Completo
-            </button>
+//             <button onclick="firebaseSync.backupToFirebase()" 
+//                     style="width: 100%; padding: 10px; margin: 5px 0; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer;">
+//                 <i class="fa-solid fa-cloud-upload"></i> Fazer Backup Completo
+//             </button>
             
-            ${!syncStatus.firebaseUser ? `
-                <button onclick="showFirebaseLogin()" 
-                        style="width: 100%; padding: 10px; margin: 5px 0; background: #FF9800; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                    <i class="fa-solid fa-sign-in-alt"></i> Fazer Login no Firebase
-                </button>
-            ` : `
-                <button onclick="firebaseSync.signOut()" 
-                        style="width: 100%; padding: 10px; margin: 5px 0; background: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                    <i class="fa-solid fa-sign-out-alt"></i> Sair do Firebase
-                </button>
-            `}
-        </div>
-    `;
+//             ${!syncStatus.firebaseUser ? `
+//                 <button onclick="showFirebaseLogin()" 
+//                         style="width: 100%; padding: 10px; margin: 5px 0; background: #FF9800; color: white; border: none; border-radius: 5px; cursor: pointer;">
+//                     <i class="fa-solid fa-sign-in-alt"></i> Fazer Login no Firebase
+//                 </button>
+//             ` : `
+//                 <button onclick="firebaseSync.signOut()" 
+//                         style="width: 100%; padding: 10px; margin: 5px 0; background: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer;">
+//                     <i class="fa-solid fa-sign-out-alt"></i> Sair do Firebase
+//                 </button>
+//             `}
+//         </div>
+//     `;
     
-    document.body.appendChild(panel);
-}
+//     document.body.appendChild(panel);
+// }
 
-async function manualSync() {
-    if (firebaseSync) {
-        await firebaseSync.syncAllData();
-        showToast('✅ Sincronização manual iniciada');
-    } else {
-        showToast('❌ Firebase não disponível');
-    }
-}
 
-function showFirebaseLogin() {
-    const panel = document.createElement('div');
-    panel.id = 'firebaseLoginPanel';
-    panel.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 5px 30px rgba(0,0,0,0.3);
-        z-index: 2000;
-        width: 350px;
-    `;
-    
-    panel.innerHTML = `
-        <h3 style="margin-top: 0;">Login Firebase</h3>
-        
-        <div style="margin-bottom: 10px;">
-            <input type="email" id="fbEmail" placeholder="E-mail" style="width: 100%; padding: 8px; margin: 5px 0;">
-        </div>
-        
-        <div style="margin-bottom: 15px;">
-            <input type="password" id="fbPassword" placeholder="Senha" style="width: 100%; padding: 8px; margin: 5px 0;">
-        </div>
-        
-        <div style="display: flex; gap: 10px;">
-            <button onclick="doFirebaseLogin()" 
-                    style="flex: 1; padding: 10px; background: #1976d2; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                Entrar
-            </button>
-            <button onclick="document.getElementById('firebaseLoginPanel').remove()" 
-                    style="padding: 10px; background: #f44336; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                Cancelar
-            </button>
-        </div>
-        
-        <p style="margin-top: 15px; font-size: 12px; color: #666;">
-            <i class="fa-solid fa-info-circle"></i>
-            O login permite sincronizar seus dados entre dispositivos
-        </p>
-    `;
-    
-    document.body.appendChild(panel);
-}
-
-async function doFirebaseLogin() {
-    const email = document.getElementById('fbEmail').value;
-    const password = document.getElementById('fbPassword').value;
-    
-    if (!email || !password) {
-        showToast('❌ Preencha e-mail e senha');
-        return;
-    }
-    
-    try {
-        await firebaseSync.signIn(email, password);
-        document.getElementById('firebaseLoginPanel').remove();
-        showToast('✅ Login Firebase bem-sucedido');
-    } catch (error) {
-        showToast(`❌ Erro: ${error.message}`);
-    }
-}
-
-// Adicione botão de sincronização à interface
-function addSyncButton() {
-    const existingBtn = document.getElementById('syncBtn');
-    if (existingBtn) existingBtn.remove();
-    
-    const syncBtn = document.createElement('button');
-    syncBtn.id = 'syncBtn';
-    syncBtn.innerHTML = '<i class="fa-solid fa-cloud"></i>';
-    syncBtn.style.cssText = `
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        z-index: 1000;
-        background: #1976d2;
-        color: white;
-        border: none;
-        padding: 10px 15px;
-        border-radius: 50%;
-        font-weight: bold;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-        cursor: pointer;
-    `;
-    
-    syncBtn.addEventListener('click', function() {
-        showSyncPanel();
-    });
-    
-    document.body.appendChild(syncBtn);
-}
-
-setTimeout(addSyncButton, 3000);
 
 window.showEditProfileScreen = showEditProfileScreen;
 window.saveProfileChanges = saveProfileChanges;
